@@ -15,3 +15,11 @@ path = "src/main.rs"
 torven-core = { path = "../torven-core" }
 ratatui = "0.29"
 crossterm = "0.28"
+
+# Bootstrap stubs declared in Story 1.1 — consumed by Story 1.4 (TUI migration).
+# Remove from this list when src/tui/ migrates into this crate.
+[package.metadata.cargo-machete]
+ignored = [
+    "ratatui",      # Story 1.4 (TUI panels migration)
+    "crossterm",    # Story 1.4 (TUI input handling)
+]
