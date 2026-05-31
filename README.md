@@ -1,5 +1,7 @@
 # torven
 
+[![CI](https://github.com/lorenzomatheuss/ai-usagebar/actions/workflows/ci.yml/badge.svg)](https://github.com/lorenzomatheuss/ai-usagebar/actions/workflows/ci.yml)
+
 Waybar widget and tabbed TUI for AI plan usage across **Anthropic Claude**, **OpenAI Codex/ChatGPT**, **Z.AI (GLM)**, and **OpenRouter**.
 
 This started as a Rust port of [`claudebar`](https://github.com/mryll/claudebar) and stays drop-in compatible with it. It keeps the minimalist Pango-bordered tooltip, Omarchy theme auto-detection, and flock-protected OAuth refresh, then adds four more vendors and a proper testable codebase instead of one long shell script.
@@ -284,6 +286,9 @@ make test                                          # unit + integration
 source ~/.config/zsh/secrets                       # only needed for live smoke
 make smoke                                         # live API drift detection
 make clippy                                        # cargo clippy -D warnings
+
+# Run CI gate locally (mirrors .github/workflows/ci.yml)
+cargo test --workspace && cargo clippy --all-targets -- -D warnings && cargo machete
 ```
 
 ## TUI controls

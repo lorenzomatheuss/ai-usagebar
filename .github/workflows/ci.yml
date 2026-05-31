@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+jobs:
+  rust-quality:
+    name: Rust Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --locked
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo machete
+        run: cargo machete
+
+  xcode-scaffold:
+    name: Xcode Scaffold
+    runs-on: macos-14
+    continue-on-error: true  # TODO: remover em Story 1.27 quando signing OK
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Build Rust core (aarch64 — Apple Silicon runner)
+        run: cargo build --release --target aarch64-apple-darwin -p torven-core
+
+      - name: Build xcframework (stub se script não implementado ainda)
+        run: |
+          if [ -f apple/scripts/build-xcframework.sh ]; then
+            ./apple/scripts/build-xcframework.sh
+          else
+            echo "build-xcframework.sh not yet implemented — skip"
+          fi
+
+      - name: Generate Xcode project
+        run: cd apple && xcodegen generate
+
+      - name: Build app (no signing)
+        run: |
+          cd apple
+          xcodebuild \
+            -project Torven.xcodeproj \
+            -scheme Torven \
+            -configuration Debug \
+            build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
