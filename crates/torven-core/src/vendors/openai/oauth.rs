@@ -69,7 +69,7 @@ pub async fn refresh(
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        let msg = crate::anthropic::oauth::parse_error_body(&body)
+        let msg = crate::vendors::anthropic::oauth::parse_error_body(&body)
             .unwrap_or_else(|| "Refresh failed".into());
         return Err(AppError::Http {
             status: status.as_u16(),

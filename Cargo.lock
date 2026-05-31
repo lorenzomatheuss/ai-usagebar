@@ -2030,7 +2030,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml 0.8.23",
- "toml_edit",
  "uniffi",
 ]
 
@@ -2038,8 +2037,14 @@ dependencies = [
 name = "torven-tui"
 version = "0.5.0-dev"
 dependencies = [
+ "chrono",
  "crossterm",
+ "directories",
  "ratatui",
+ "reqwest",
+ "tempfile",
+ "tokio",
+ "toml_edit",
  "torven-core",
 ]
 

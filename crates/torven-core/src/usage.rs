@@ -7,9 +7,11 @@
 //! token + MCP buckets. Forcing them into a shared shape would either drop
 //! information or paper over genuine differences.
 //!
-//! Renderers (widget tooltip, TUI tab) consume a `VendorSnapshot` directly,
-//! not a flattened shape — so each vendor controls its own presentation while
-//! sharing the pacing math, color thresholds, and Pango primitives.
+//! Renderers (SwiftUI menu-bar, developer TUI, AI Insights prompts) consume a
+//! `VendorSnapshot` directly — typically projected onto
+//! [`crate::format::RawMetrics`] via [`crate::format::compute_metrics`] so each
+//! surface controls its own presentation while sharing the pacing math and
+//! threshold semantics defined in [`crate::pacing`].
 
 use chrono::{DateTime, Utc};
 
@@ -193,7 +195,7 @@ pub fn anthropic_severity(snap: &AnthropicSnapshot) -> crate::pacing::PaceSeveri
             }
         }
     }
-    crate::pango::severity_for(max)
+    crate::pacing::severity_for(max)
 }
 
 #[cfg(test)]

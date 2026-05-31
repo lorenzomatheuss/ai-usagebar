@@ -7,6 +7,10 @@ license.workspace = true
 authors.workspace = true
 description = "Ratatui-based developer TUI for Torven (debug/diagnostics surface)"
 
+[lib]
+name = "torven_tui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "torven-tui"
 path = "src/main.rs"
@@ -15,11 +19,18 @@ path = "src/main.rs"
 torven-core = { path = "../torven-core" }
 ratatui = "0.29"
 crossterm = "0.28"
+# Pulled in by the TUI app/settings modules — async runtime, HTTP client,
+# date formatting, and toml editing (Settings overlay preserves comments).
+tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+chrono = { version = "0.4", features = ["serde"] }
+toml_edit = "0.22"
+directories = "5"
 
-# Bootstrap stubs declared in Story 1.1 — consumed by Story 1.4 (TUI migration).
-# Remove from this list when src/tui/ migrates into this crate.
-[package.metadata.cargo-machete]
-ignored = [
-    "ratatui",      # Story 1.4 (TUI panels migration)
-    "crossterm",    # Story 1.4 (TUI input handling)
-]
+[dev-dependencies]
+tempfile = "3"
+
+# Story 1.4 consumes ratatui + crossterm by migrating the TUI from the
+# legacy `src/tui/` into this crate. The bootstrap stubs from Story 1.1
+# (`ratatui` / `crossterm` in `cargo-machete`'s ignored list) are removed
+# now that both crates are exercised by `lib.rs` and `main.rs`.

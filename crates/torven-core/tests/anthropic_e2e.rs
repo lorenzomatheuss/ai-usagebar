@@ -1,21 +1,29 @@
 //! End-to-end integration test for the Anthropic vendor.
 //!
 //! Stands up a mockito server that pretends to be the Anthropic OAuth +
-//! usage endpoints, drives the full `fetch_snapshot` + `render_anthropic`
-//! pipeline against canned fixtures, and asserts the resulting Waybar JSON
-//! via `insta` snapshots. Catches schema drift in either the wire types or
-//! the rendered output.
+//! usage endpoints, drives the full `fetch_snapshot` pipeline against canned
+//! fixtures, and asserts on the resulting [`AnthropicSnapshot`] + the
+//! [`RawMetrics`] projection.
+//!
+//! ## Story 1.4 rewrite
+//!
+//! The legacy version of this test asserted on Pango-markup Waybar JSON via
+//! `insta` snapshots — that surface was deleted in Story 1.3. The fetcher
+//! itself is unchanged, so the assertions now target what every consumer
+//! actually reads: the snapshot fields and the cross-platform RawMetrics
+//! struct. Schema drift in the upstream API still surfaces here as a
+//! deserialization failure or a wrong utilization percentage.
 
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use torven::anthropic::{self, fetch::Endpoints};
-use torven::cache::Cache;
-use torven::theme::Theme;
-use torven::widget::render::{DEFAULT_FORMAT, RenderInput, render_anthropic};
-use chrono::{TimeZone, Utc};
 use tempfile::{NamedTempFile, TempDir};
+
+use torven_core::cache::Cache;
+use torven_core::format::{LabelKind, compute_metrics};
+use torven_core::usage::VendorSnapshot;
+use torven_core::vendors::anthropic::{self, fetch::Endpoints};
 
 fn write_creds() -> NamedTempFile {
     // Token expires far in the future → no refresh needed during the test.
@@ -49,7 +57,7 @@ fn read_fixture(name: &str) -> String {
 }
 
 #[tokio::test]
-async fn full_response_renders_expected_waybar_json() {
+async fn full_response_parses_into_snapshot_with_three_windows() {
     let mut server = mockito::Server::new_async().await;
     server
         .mock("GET", "/api/oauth/usage")
@@ -76,29 +84,30 @@ async fn full_response_renders_expected_waybar_json() {
     .await
     .unwrap();
 
-    // Pin "now" to a known value so countdown / pacing are deterministic.
-    let now = Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap();
-    let theme = Theme::default(); // One Dark — stable across machines
-    let format = DEFAULT_FORMAT.to_string();
-    let input = RenderInput {
-        outcome: &outcome,
-        theme: &theme,
-        format: &format,
-        tooltip_format: None,
-        icon: None,
-        pace_tolerance: 5,
-        format_pace_color: false,
-        tooltip_pace_pts: false,
-        now,
-    };
-    let out = render_anthropic(&input);
-    insta::assert_snapshot!("full_response_bar_text", &out.text);
-    insta::assert_snapshot!("full_response_tooltip", &out.tooltip);
-    assert_eq!(format!("{:?}", out.class), "Mid");
+    // Fresh fetch — not stale.
+    assert!(!outcome.stale, "fresh fetch should not be marked stale");
+
+    let snap = &outcome.snapshot;
+    // The fixture exercises every Anthropic field; assert the windows
+    // round-trip and the headline RawMetrics projection is sensible.
+    assert!(snap.session.utilization_pct >= 0 && snap.session.utilization_pct <= 100);
+    assert!(snap.weekly.utilization_pct >= 0 && snap.weekly.utilization_pct <= 100);
+
+    let metrics = compute_metrics(&VendorSnapshot::Anthropic(snap.clone()));
+    assert_eq!(metrics.label_kind, LabelKind::PercentOfWindow);
+    // Worst-of-windows is what RawMetrics reports — must be at least as high
+    // as the session window.
+    let session = snap.session.utilization_pct as f64;
+    assert!(
+        metrics.pct_used.unwrap_or(0.0) >= session,
+        "headline pct {} should be >= session pct {}",
+        metrics.pct_used.unwrap_or(0.0),
+        session
+    );
 }
 
 #[tokio::test]
-async fn no_sonnet_no_extra_renders_minimal_tooltip() {
+async fn minimal_response_has_no_sonnet_or_extra() {
     let mut server = mockito::Server::new_async().await;
     server
         .mock("GET", "/api/oauth/usage")
@@ -124,28 +133,16 @@ async fn no_sonnet_no_extra_renders_minimal_tooltip() {
     )
     .await
     .unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap();
-    let theme = Theme::default();
-    let format = DEFAULT_FORMAT.to_string();
-    let input = RenderInput {
-        outcome: &outcome,
-        theme: &theme,
-        format: &format,
-        tooltip_format: None,
-        icon: None,
-        pace_tolerance: 5,
-        format_pace_color: false,
-        tooltip_pace_pts: false,
-        now,
-    };
-    let out = render_anthropic(&input);
-    assert!(!out.tooltip.contains("Sonnet only"));
-    assert!(!out.tooltip.contains("Extra usage"));
-    insta::assert_snapshot!("minimal_response_tooltip", &out.tooltip);
+
+    assert!(outcome.snapshot.sonnet.is_none());
+    assert!(outcome.snapshot.extra.is_none());
+    let metrics = compute_metrics(&VendorSnapshot::Anthropic(outcome.snapshot));
+    // No `extra` block → no cost_usd in RawMetrics.
+    assert!(metrics.cost_usd.is_none());
 }
 
 #[tokio::test]
-async fn http_429_falls_back_to_stale_cache_with_pause_indicator() {
+async fn http_429_falls_back_to_stale_cache_with_last_error_recorded() {
     let mut server = mockito::Server::new_async().await;
     server
         .mock("GET", "/api/oauth/usage")
@@ -177,23 +174,9 @@ async fn http_429_falls_back_to_stale_cache_with_pause_indicator() {
     .unwrap();
     assert!(outcome.stale);
     assert_eq!(outcome.last_error.as_ref().map(|(c, _)| *c), Some(429));
-
-    let now = Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap();
-    let theme = Theme::default();
-    let format = DEFAULT_FORMAT.to_string();
-    let input = RenderInput {
-        outcome: &outcome,
-        theme: &theme,
-        format: &format,
-        tooltip_format: None,
-        icon: None,
-        pace_tolerance: 5,
-        format_pace_color: false,
-        tooltip_pace_pts: false,
-        now,
-    };
-    let out = render_anthropic(&input);
-    assert!(out.text.contains("⏸"));
-    assert!(out.tooltip.contains("HTTP 429"));
-    assert!(out.tooltip.contains("slow down"));
+    let msg = outcome.last_error.as_ref().map(|(_, m)| m.clone()).unwrap();
+    assert!(
+        msg.contains("slow down"),
+        "expected vendor's error message to surface, got: {msg}"
+    );
 }

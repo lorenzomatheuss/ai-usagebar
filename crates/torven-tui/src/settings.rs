@@ -5,6 +5,10 @@
 //! Persistence uses `toml_edit` so the existing config keeps its comments,
 //! whitespace, and unrelated fields. Files with inline keys are atomically
 //! written and `chmod 600`ed.
+//!
+//! Story 1.4 dropped the `Theme` parameter and the Waybar SIGRTMIN refresh
+//! signal: the macOS menu-bar app picks up config changes on its own refresh
+//! tick, so the TUI's only responsibility is to persist the file durably.
 
 use std::path::{Path, PathBuf};
 
@@ -15,10 +19,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use toml_edit::{DocumentMut, value};
 
-use crate::config::Config;
-use crate::error::{AppError, Result};
-use crate::theme::Theme;
-use crate::vendor::VendorId;
+use torven_core::config::Config;
+use torven_core::error::{AppError, Result};
+use torven_core::vendor::VendorId;
+
+use crate::view::palette;
 
 /// Which input field has keyboard focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,19 +281,15 @@ fn handle_input(input: &mut KeyInput, code: KeyCode) {
     }
 }
 
-/// Save to `~/.config/torven/config.toml` (or create it). On success,
-/// signal a running Waybar process (SIGRTMIN+13) so any module configured
-/// with `signal: 13` refreshes its exec output immediately — otherwise the
-/// bar text wouldn't reflect a new primary vendor until the next interval
-/// tick (up to 300s).
+/// Save to `~/.config/torven/config.toml` (or create it). On macOS the host
+/// app picks up the new value on its next refresh tick — the Linux-specific
+/// SIGRTMIN+13 Waybar signal was removed in Story 1.3.
 fn save_to_config_default(state: &SettingsState) -> Result<()> {
     let path = default_config_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| AppError::io_at(parent, e))?;
     }
-    save_to_path(state, &path)?;
-    crate::waybar::request_refresh();
-    Ok(())
+    save_to_path(state, &path)
 }
 
 /// Same as `save_to_config_default` but with an explicit path — exposed
@@ -315,7 +316,7 @@ pub fn save_to_path(state: &SettingsState, path: &Path) -> Result<()> {
     }
 
     let bytes = doc.to_string();
-    crate::cache::atomic_write(path, bytes.as_bytes())?;
+    torven_core::cache::atomic_write(path, bytes.as_bytes())?;
 
     // chmod 600 — only required when we wrote a secret, but always safe.
     #[cfg(unix)]
@@ -361,14 +362,14 @@ fn default_config_path() -> Result<PathBuf> {
 }
 
 /// Render the modal overlay over `area`.
-pub fn render(f: &mut Frame, area: Rect, state: &SettingsState, theme: &Theme) {
+pub fn render(f: &mut Frame, area: Rect, state: &SettingsState) {
     let modal = centered_rect(60, 60, area);
     // Clear underneath so the body is unreadable through us.
     f.render_widget(Clear, modal);
 
-    let accent = parse_hex(&theme.blue).unwrap_or(Color::Cyan);
-    let fg = parse_hex(&theme.fg).unwrap_or(Color::White);
-    let dim = parse_hex(&theme.dim).unwrap_or(Color::DarkGray);
+    let accent = palette::ACCENT;
+    let fg = palette::FG;
+    let dim = palette::DIM;
 
     let block = Block::default()
         .title(" Settings ")
@@ -551,18 +552,6 @@ fn render_input(
         Span::styled(format!("    {body}"), box_style),
         Span::styled(format!("{suffix}{cursor_hint}"), suffix_style),
     ])
-}
-
-fn parse_hex(s: &str) -> Option<Color> {
-    let s = s.strip_prefix('#').unwrap_or(s);
-    if s.len() != 6 {
-        return None;
-    }
-    Some(Color::Rgb(
-        u8::from_str_radix(&s[0..2], 16).ok()?,
-        u8::from_str_radix(&s[2..4], 16).ok()?,
-        u8::from_str_radix(&s[4..6], 16).ok()?,
-    ))
 }
 
 /// Center a rectangle of `percent_x * percent_y` over `r`.

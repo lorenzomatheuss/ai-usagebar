@@ -1,4 +1,7 @@
 //! TUI rendering — tabs + body + footer.
+//!
+//! Story 1.4 dropped the `Theme` parameter — colors now come from the fixed
+//! palette in [`crate::format_tui`].
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
@@ -6,9 +9,16 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 
-use crate::tui::app::App;
-use crate::tui::panels;
-use crate::vendor::VendorId;
+use torven_core::vendor::VendorId;
+
+use crate::app::App;
+use crate::panels;
+
+/// Accent color for active UI chrome — calm green matches macOS system blue
+/// closely enough to feel native in a terminal.
+const ACCENT: Color = Color::Rgb(0x4D, 0x9D, 0xE0);
+const DIM: Color = Color::Rgb(0x6B, 0x72, 0x80);
+const FG: Color = Color::Rgb(0xE5, 0xE7, 0xEB);
 
 pub fn draw(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -26,7 +36,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     // Settings overlay sits on top — rendered last so it covers everything.
     if let Some(s) = &app.settings {
-        crate::tui::settings::render(f, f.area(), s, &app.theme);
+        crate::settings::render(f, f.area(), s);
     }
 }
 
@@ -39,22 +49,6 @@ fn vendor_label(id: VendorId) -> &'static str {
     }
 }
 
-fn accent(theme: &crate::theme::Theme) -> Color {
-    parse_hex(&theme.blue).unwrap_or(Color::Cyan)
-}
-
-fn parse_hex(s: &str) -> Option<Color> {
-    let s = s.strip_prefix('#').unwrap_or(s);
-    if s.len() != 6 {
-        return None;
-    }
-    Some(Color::Rgb(
-        u8::from_str_radix(&s[0..2], 16).ok()?,
-        u8::from_str_radix(&s[2..4], 16).ok()?,
-        u8::from_str_radix(&s[4..6], 16).ok()?,
-    ))
-}
-
 fn draw_tabs(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let titles: Vec<Line> = app
         .vendors
@@ -65,15 +59,15 @@ fn draw_tabs(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" torven ")
-        .border_style(Style::default().fg(accent(&app.theme)));
+        .border_style(Style::default().fg(ACCENT));
 
     let tabs = Tabs::new(titles)
         .block(block)
         .select(app.active)
-        .style(Style::default().fg(parse_hex(&app.theme.fg).unwrap_or(Color::Gray)))
+        .style(Style::default().fg(FG))
         .highlight_style(
             Style::default()
-                .fg(accent(&app.theme))
+                .fg(ACCENT)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )
         .divider(" · ");
@@ -83,7 +77,7 @@ fn draw_tabs(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 fn draw_body(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let block = Block::default()
         .borders(Borders::LEFT | Borders::RIGHT)
-        .border_style(Style::default().fg(accent(&app.theme)));
+        .border_style(Style::default().fg(ACCENT));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -91,24 +85,33 @@ fn draw_body(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         return;
     };
     let sections = panels::sections_for(tab, chrono::Utc::now(), 5);
-    panels::render(f, inner, &app.theme, &sections);
+    panels::render(f, inner, &sections);
 }
 
 fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    let dim_color = parse_hex(&app.theme.dim).unwrap_or(Color::DarkGray);
     let text = Line::from(vec![
-        Span::styled(" [Tab/h-l]", Style::default().fg(accent(&app.theme))),
-        Span::styled(" switch · ", Style::default().fg(dim_color)),
-        Span::styled("[r]", Style::default().fg(accent(&app.theme))),
-        Span::styled(" refresh · ", Style::default().fg(dim_color)),
-        Span::styled("[s]", Style::default().fg(accent(&app.theme))),
-        Span::styled(" settings · ", Style::default().fg(dim_color)),
-        Span::styled("[q]", Style::default().fg(accent(&app.theme))),
-        Span::styled(" quit", Style::default().fg(dim_color)),
+        Span::styled(" [Tab/h-l]", Style::default().fg(ACCENT)),
+        Span::styled(" switch · ", Style::default().fg(DIM)),
+        Span::styled("[r]", Style::default().fg(ACCENT)),
+        Span::styled(" refresh · ", Style::default().fg(DIM)),
+        Span::styled("[s]", Style::default().fg(ACCENT)),
+        Span::styled(" settings · ", Style::default().fg(DIM)),
+        Span::styled("[q]", Style::default().fg(ACCENT)),
+        Span::styled(" quit", Style::default().fg(DIM)),
         Span::styled(
             format!("   ·   updated {}", app.last_refresh.format("%H:%M:%S")),
-            Style::default().fg(dim_color),
+            Style::default().fg(DIM),
         ),
     ]);
     f.render_widget(Paragraph::new(text), area);
+}
+
+/// Re-exported palette constants so sibling modules (`panels`, `settings`)
+/// share the same fixed theme without each duplicating the RGB literals.
+pub mod palette {
+    use ratatui::style::Color;
+
+    pub const ACCENT: Color = super::ACCENT;
+    pub const DIM: Color = super::DIM;
+    pub const FG: Color = super::FG;
 }

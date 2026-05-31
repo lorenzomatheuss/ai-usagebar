@@ -99,7 +99,22 @@ pub fn default_path() -> Result<PathBuf> {
 }
 
 pub fn read_from(path: &Path) -> Result<CredentialsFile> {
-    let raw = std::fs::read_to_string(path).map_err(|e| AppError::io_at(path, e))?;
+    let raw = std::fs::read_to_string(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            // Missing creds file is an "actionable" condition — the user
+            // needs to run `claude` to log in. Surface as `Credentials` so
+            // the menu-bar / TUI can suggest re-auth rather than a generic
+            // IO banner. Hint at the config knob (`credentials_path`) in
+            // case the user keeps creds in a non-default location.
+            AppError::Credentials(format!(
+                "Claude OAuth credentials not found at {}. Run `claude` to \
+                 log in, or set `credentials_path` in ~/.config/torven/config.toml.",
+                path.display()
+            ))
+        } else {
+            AppError::io_at(path, e)
+        }
+    })?;
     serde_json::from_str(&raw).map_err(|e| {
         AppError::Credentials(format!(
             "could not parse {}: {e}. Run `claude` to re-authenticate.",
