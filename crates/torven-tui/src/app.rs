@@ -1,15 +1,19 @@
 //! TUI app state — vendors, tab selection, per-vendor snapshot cache.
+//!
+//! Story 1.4 dropped the `Theme` field — the deleted `theme.rs` was the
+//! Omarchy/Linux detector, which has no analogue on macOS. The TUI now uses
+//! the fixed calm/amber/critical palette from [`crate::format_tui`].
 
 use std::time::Duration;
 
 use chrono::Utc;
 use reqwest::Client;
 
-use crate::cache::DEFAULT_TTL;
-use crate::config::Config;
-use crate::error::Result;
-use crate::theme::Theme;
-use crate::vendor::{VendorId, VendorOutcome};
+use torven_core::cache::DEFAULT_TTL;
+use torven_core::config::Config;
+use torven_core::error::Result;
+use torven_core::vendor::{VendorId, VendorOutcome};
+use torven_core::vendors::{anthropic, openai, openrouter, zai};
 
 /// What we display per vendor — raw snapshot + fetch metadata for native
 /// panel rendering, or an error message when the fetch failed.
@@ -25,7 +29,7 @@ pub enum TabState {
 
 #[derive(Debug, Clone)]
 pub struct ReadyTab {
-    pub snapshot: crate::usage::VendorSnapshot,
+    pub snapshot: torven_core::usage::VendorSnapshot,
     pub stale: bool,
     pub last_error: Option<(u16, String)>,
     pub cache_age: Option<std::time::Duration>,
@@ -36,11 +40,10 @@ pub struct App {
     pub vendors: Vec<VendorId>,
     pub active: usize,
     pub tabs: Vec<TabState>,
-    pub theme: Theme,
     pub last_refresh: chrono::DateTime<chrono::Utc>,
     pub quit: bool,
     /// When `Some`, the Settings overlay is open and consuming key events.
-    pub settings: Option<crate::tui::settings::SettingsState>,
+    pub settings: Option<crate::settings::SettingsState>,
 }
 
 impl App {
@@ -50,7 +53,6 @@ impl App {
             vendors,
             active: 0,
             tabs: vec![TabState::Loading; n],
-            theme: Theme::default().merged_with_omarchy(),
             last_refresh: Utc::now(),
             quit: false,
             settings: None,
@@ -115,55 +117,40 @@ async fn build_outcome(
 ) -> Result<VendorOutcome> {
     match vendor {
         VendorId::Anthropic => {
-            let cache = crate::cache::Cache::for_vendor("anthropic")?;
+            let cache = torven_core::cache::Cache::for_vendor("anthropic")?;
             let creds_path = config
                 .anthropic
                 .credentials_path
                 .clone()
-                .unwrap_or_else(|| crate::anthropic::creds::default_path().unwrap_or_default());
-            let endpoints = crate::anthropic::fetch::Endpoints::default();
-            let outcome = crate::anthropic::fetch_snapshot(
-                client,
-                &creds_path,
-                &cache,
-                &endpoints,
-                DEFAULT_TTL,
-            )
-            .await?;
-            Ok(crate::vendor::VendorOutcome {
-                snapshot: crate::usage::VendorSnapshot::Anthropic(outcome.snapshot),
-                stale: outcome.stale,
-                last_error: outcome.last_error,
-                cache_age: outcome.cache_age,
-            })
+                .unwrap_or_else(|| anthropic::creds::default_path().unwrap_or_default());
+            let endpoints = anthropic::fetch::Endpoints::default();
+            let outcome =
+                anthropic::fetch_snapshot(client, &creds_path, &cache, &endpoints, DEFAULT_TTL)
+                    .await?;
+            Ok(outcome.into())
         }
         VendorId::Openrouter => {
-            let api_key = crate::config::resolve_api_key(
+            let api_key = torven_core::config::resolve_api_key(
                 "OpenRouter",
                 &config.openrouter.api_key_env,
                 config.openrouter.api_key.as_deref(),
             )?;
-            let cache = crate::cache::Cache::for_vendor("openrouter")?;
-            let endpoints = crate::openrouter::fetch::Endpoints::default();
-            let outcome = crate::openrouter::fetch_snapshot(
-                client,
-                &api_key,
-                &cache,
-                &endpoints,
-                DEFAULT_TTL,
-            )
-            .await?;
+            let cache = torven_core::cache::Cache::for_vendor("openrouter")?;
+            let endpoints = openrouter::fetch::Endpoints::default();
+            let outcome =
+                openrouter::fetch_snapshot(client, &api_key, &cache, &endpoints, DEFAULT_TTL)
+                    .await?;
             Ok(outcome.into())
         }
         VendorId::Zai => {
-            let api_key = crate::config::resolve_api_key(
+            let api_key = torven_core::config::resolve_api_key(
                 "Zai",
                 &config.zai.api_key_env,
                 config.zai.api_key.as_deref(),
             )?;
-            let cache = crate::cache::Cache::for_vendor("zai")?;
-            let endpoints = crate::zai::fetch::Endpoints::default();
-            let outcome = crate::zai::fetch_snapshot(
+            let cache = torven_core::cache::Cache::for_vendor("zai")?;
+            let endpoints = zai::fetch::Endpoints::default();
+            let outcome = zai::fetch_snapshot(
                 client,
                 &api_key,
                 &cache,
@@ -175,15 +162,15 @@ async fn build_outcome(
             Ok(outcome.into())
         }
         VendorId::Openai => {
-            let cache = crate::cache::Cache::for_vendor("openai")?;
+            let cache = torven_core::cache::Cache::for_vendor("openai")?;
             let creds_path = config
                 .openai
                 .codex_auth_path
                 .clone()
-                .unwrap_or_else(|| crate::openai::creds::default_path().unwrap_or_default());
-            let endpoints = crate::openai::fetch::Endpoints::default();
+                .unwrap_or_else(|| openai::creds::default_path().unwrap_or_default());
+            let endpoints = openai::fetch::Endpoints::default();
             let outcome =
-                crate::openai::fetch_snapshot(client, &creds_path, &cache, &endpoints, DEFAULT_TTL)
+                openai::fetch_snapshot(client, &creds_path, &cache, &endpoints, DEFAULT_TTL)
                     .await?;
             Ok(outcome.into())
         }

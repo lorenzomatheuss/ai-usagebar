@@ -37,7 +37,6 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
-toml_edit = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 chrono = { version = "0.4", features = ["serde"] }
 fs2 = "0.4"
@@ -69,22 +68,16 @@ insta = { version = "1", features = ["json"] }
 pretty_assertions = "1"
 tempfile = "3"
 
-# Bootstrap stubs declared in Story 1.1 — consumed across Wave 1 (1.4 extract-core,
-# 1.6 config-migration, 1.13 history-sqlite, 1.15 ai-insights-core, 1.20 keychain).
-# Remove from this list as each story lands and starts using the dep.
+# Bootstrap stubs declared in Story 1.1 — Wave 1 stories trim this list as
+# they consume each dep. Story 1.4 (extract-core) consumed tokio, reqwest,
+# serde, serde_json, chrono, fs2, tempfile, directories, thiserror, toml,
+# base64, and clap by migrating the vendor fetchers + config loader into this
+# crate. `toml_edit` was removed from this crate entirely (it only had a TUI
+# consumer in `settings.rs`, which now lives in `torven-tui`).
+#
+# Nothing remains here — all the stubs ended up genuinely consumed. Keep the
+# `[package.metadata.cargo-machete]` section so future Wave 1 stories
+# (1.13/1.15/1.20) can re-introduce stub deps with the same explanation
+# pattern; an empty `ignored` list is intentional.
 [package.metadata.cargo-machete]
-ignored = [
-    "tokio",        # Story 1.4 (async ops) + 1.15 (insights streaming)
-    "reqwest",      # Story 1.4 (vendor fetchers migration)
-    "serde",        # Story 1.4 (config + history serialization)
-    "serde_json",   # Story 1.4 (config + history serialization)
-    "toml",         # Story 1.6 (config-migration)
-    "toml_edit",    # Story 1.6 (config-migration)
-    "clap",         # Story 1.16 (torven doctor CLI)
-    "chrono",       # Story 1.13 (history-sqlite timestamps)
-    "fs2",          # Story 1.6 (config file locking)
-    "tempfile",     # Story 1.6 (atomic config writes)
-    "directories",  # Story 1.6 (config paths)
-    "thiserror",    # Story 1.4 (error types)
-    "base64",       # Story 1.20 (keychain credential encoding)
-]
+ignored = []

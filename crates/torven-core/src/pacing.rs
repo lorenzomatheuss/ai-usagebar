@@ -161,6 +161,30 @@ pub fn pace_severity(delta: i32) -> PaceSeverity {
     }
 }
 
+/// Severity band keyed on an absolute utilization percent. Mirrors the
+/// `severity_for` helper that used to live in the deleted `pango.rs` module
+/// (Story 1.3 cleanup) — it expressed Waybar's bar-text color thresholds.
+///
+/// Thresholds (matching claudebar's `severity_for`):
+///   `pct < 50`   → Low
+///   `50..=74`    → Mid
+///   `75..=89`    → High
+///   `pct >= 90`  → Critical
+///
+/// Returns a [`PaceSeverity`] so UI layers (SwiftUI, TUI) can map to their
+/// own color tokens without re-encoding the thresholds.
+pub fn severity_for(pct: i32) -> PaceSeverity {
+    if pct >= 90 {
+        PaceSeverity::Critical
+    } else if pct >= 75 {
+        PaceSeverity::High
+    } else if pct >= 50 {
+        PaceSeverity::Mid
+    } else {
+        PaceSeverity::Low
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,6 +313,18 @@ mod tests {
         assert_eq!(pace_severity(9), PaceSeverity::High);
         assert_eq!(pace_severity(10), PaceSeverity::Critical);
         assert_eq!(pace_severity(100), PaceSeverity::Critical);
+    }
+
+    #[test]
+    fn severity_for_pct_thresholds_match_legacy_pango() {
+        assert_eq!(severity_for(0), PaceSeverity::Low);
+        assert_eq!(severity_for(49), PaceSeverity::Low);
+        assert_eq!(severity_for(50), PaceSeverity::Mid);
+        assert_eq!(severity_for(74), PaceSeverity::Mid);
+        assert_eq!(severity_for(75), PaceSeverity::High);
+        assert_eq!(severity_for(89), PaceSeverity::High);
+        assert_eq!(severity_for(90), PaceSeverity::Critical);
+        assert_eq!(severity_for(100), PaceSeverity::Critical);
     }
 
     #[test]

@@ -37,11 +37,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use torven::anthropic;
-use torven::cache::Cache;
-use torven::openai;
-use torven::openrouter;
-use torven::zai;
+use torven_core::cache::Cache;
+use torven_core::vendors::{anthropic, openai, openrouter, zai};
 
 fn xdg_cache_for(test: &str) -> Cache {
     // Use a per-test scratch dir so smoke tests don't clobber the real cache.

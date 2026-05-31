@@ -1,11 +1,208 @@
-//! torven-tui — developer-facing TUI for diagnostics and debugging.
+//! Interactive TUI — one tab per enabled vendor.
 //!
-//! Stub binary created by Story 1.1 (bootstrap-workspace). The real ratatui
-//! panels currently in the legacy `src/tui/` will be migrated here in Story
-//! 1.4.
+//! Controls:
+//!   Tab / l / →       next tab
+//!   Shift+Tab / h / ← prev tab
+//!   r                 refresh active tab
+//!   R                 refresh all tabs
+//!   s                 open Settings overlay
+//!   q / Esc / Ctrl-C  quit
 
-fn main() {
-    println!("torven-tui");
-    // Sanity-check the workspace dependency wiring.
-    println!("linked: {}", torven_core::ping());
+use std::io;
+use std::time::Duration;
+
+use chrono::Utc;
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
+};
+use crossterm::execute;
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
+use reqwest::Client;
+use tokio::sync::mpsc;
+
+use torven_core::config::Config;
+use torven_core::vendor::{HTTP_CLIENT_TIMEOUT, VendorId};
+
+use torven_tui::app::{App, REFRESH_INTERVAL, TabState, refresh_one};
+use torven_tui::view::draw;
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("torven-tui: {e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> io::Result<()> {
+    let mut config = Config::load().unwrap_or_default();
+    let vendors = config.enabled_vendors();
+    if vendors.is_empty() {
+        eprintln!("No vendors are enabled in ~/.config/torven/config.toml. Exiting.");
+        return Ok(());
+    }
+
+    let client = Client::builder()
+        .timeout(HTTP_CLIENT_TIMEOUT)
+        .build()
+        .map_err(io::Error::other)?;
+
+    let mut app = App::new_with_primary(vendors, config.ui.primary);
+
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let res = event_loop(&mut terminal, &mut app, &client, &mut config).await;
+
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+    res
+}
+
+async fn event_loop<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+    client: &Client,
+    config: &mut Config,
+) -> io::Result<()> {
+    // Kick off initial fetches for every vendor in parallel.
+    let (tx, mut rx) = mpsc::unbounded_channel::<(usize, TabState)>();
+    spawn_all(app, client, config, &tx);
+
+    let mut tick = tokio::time::interval(REFRESH_INTERVAL);
+    tick.tick().await; // consume the immediate tick.
+
+    loop {
+        terminal.draw(|f| draw(f, app))?;
+
+        tokio::select! {
+            biased;
+            // Snapshot results from background tasks.
+            Some((idx, state)) = rx.recv() => {
+                if let Some(slot) = app.tabs.get_mut(idx) {
+                    *slot = state;
+                    app.last_refresh = Utc::now();
+                }
+            }
+            // Periodic auto-refresh of all tabs.
+            _ = tick.tick() => {
+                spawn_all(app, client, config, &tx);
+            }
+            // Keyboard events. Poll with a small budget so the select wakes
+            // up promptly when nothing else is going on.
+            res = tokio::task::spawn_blocking(|| event::poll(Duration::from_millis(150))) => {
+                let polled = res.unwrap_or(Ok(false)).unwrap_or(false);
+                if polled {
+                    if let Ok(Event::Key(k)) = event::read() {
+                        // Settings overlay consumes all keys when open.
+                        if let Some(s) = app.settings.as_mut() {
+                            use torven_tui::settings::{Action as SAction, handle_key as shandle};
+                            match shandle(s, k.code, k.modifiers) {
+                                SAction::Continue => {}
+                                SAction::Close => app.settings = None,
+                                SAction::SavedAndClose => {
+                                    app.settings = None;
+                                    // Re-load config so the new primary takes effect
+                                    // on the next render, and queue an immediate refresh
+                                    // of all vendors so newly-set API keys are picked up.
+                                    *config = Config::load().unwrap_or_default();
+                                    app.select_primary(config.ui.primary);
+                                    spawn_all(app, client, config, &tx);
+                                }
+                            }
+                            continue;
+                        }
+                        // Normal key handling (settings closed).
+                        if matches!(k.code, KeyCode::Char('s')) {
+                            let cfg = Config::load().unwrap_or_default();
+                            app.settings = Some(
+                                torven_tui::settings::SettingsState::from_config(&cfg),
+                            );
+                            continue;
+                        }
+                        if handle_key(app, k.code, k.modifiers) {
+                            return Ok(());
+                        }
+                        // Refresh-on-key handling.
+                        if matches!(k.code, KeyCode::Char('r')) {
+                            if let Some(v) = app.active_vendor() {
+                                let idx = app.active;
+                                spawn_one(app, idx, v, client, config, &tx);
+                            }
+                        }
+                        if matches!(k.code, KeyCode::Char('R')) {
+                            spawn_all(app, client, config, &tx);
+                        }
+                    }
+                }
+            }
+        }
+
+        if app.quit {
+            return Ok(());
+        }
+    }
+}
+
+fn spawn_all(
+    app: &mut App,
+    client: &Client,
+    config: &Config,
+    tx: &mpsc::UnboundedSender<(usize, TabState)>,
+) {
+    for (i, v) in app.vendors.clone().into_iter().enumerate() {
+        spawn_one(app, i, v, client, config, tx);
+    }
+}
+
+fn spawn_one(
+    app: &mut App,
+    idx: usize,
+    vendor: VendorId,
+    client: &Client,
+    config: &Config,
+    tx: &mpsc::UnboundedSender<(usize, TabState)>,
+) {
+    let tx = tx.clone();
+    let client = client.clone();
+    let cfg = config.clone();
+    app.tabs[idx] = TabState::Loading;
+    tokio::spawn(async move {
+        let state = refresh_one(&client, &cfg, vendor).await;
+        let _ = tx.send((idx, state));
+    });
+}
+
+fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
+    match code {
+        KeyCode::Char('q') | KeyCode::Esc => {
+            app.quit = true;
+            true
+        }
+        KeyCode::Char('c') if mods.contains(KeyModifiers::CONTROL) => {
+            app.quit = true;
+            true
+        }
+        KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right => {
+            app.next_tab();
+            false
+        }
+        KeyCode::BackTab | KeyCode::Char('h') | KeyCode::Left => {
+            app.prev_tab();
+            false
+        }
+        _ => false,
+    }
 }

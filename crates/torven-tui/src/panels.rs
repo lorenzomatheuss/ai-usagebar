@@ -12,16 +12,17 @@
 use chrono::{DateTime, Utc};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Gauge, Paragraph};
 
-use crate::countdown;
-use crate::pacing::{self, PaceSeverity};
-use crate::pango::severity_for;
-use crate::theme::Theme;
-use crate::tui::app::TabState;
-use crate::usage::VendorSnapshot;
+use torven_core::countdown;
+use torven_core::pacing::{self, PaceSeverity, severity_for};
+use torven_core::usage::VendorSnapshot;
+
+use crate::app::TabState;
+use crate::format_tui;
+use crate::view::palette;
 
 /// One row of the panel body. Vendors emit a `Vec<Section>`; the renderer
 /// turns them into ratatui widgets.
@@ -104,7 +105,7 @@ pub fn sections_for(tab: &TabState, now: DateTime<Utc>, pace_tolerance: u32) -> 
 }
 
 fn anthropic_sections(
-    s: &crate::usage::AnthropicSnapshot,
+    s: &torven_core::usage::AnthropicSnapshot,
     now: DateTime<Utc>,
     tol: u32,
 ) -> Vec<Section> {
@@ -129,7 +130,11 @@ fn anthropic_sections(
     v
 }
 
-fn openai_sections(s: &crate::usage::OpenAiSnapshot, now: DateTime<Utc>, tol: u32) -> Vec<Section> {
+fn openai_sections(
+    s: &torven_core::usage::OpenAiSnapshot,
+    now: DateTime<Utc>,
+    tol: u32,
+) -> Vec<Section> {
     let mut v = vec![Section::Title(s.plan.clone())];
     push_window(&mut v, "Codex 5h", &s.session, now, tol, true);
     push_window(&mut v, "Codex weekly", &s.weekly, now, tol, true);
@@ -158,7 +163,7 @@ fn openai_sections(s: &crate::usage::OpenAiSnapshot, now: DateTime<Utc>, tol: u3
     v
 }
 
-fn zai_sections(s: &crate::usage::ZaiSnapshot, now: DateTime<Utc>) -> Vec<Section> {
+fn zai_sections(s: &torven_core::usage::ZaiSnapshot, now: DateTime<Utc>) -> Vec<Section> {
     let mut v = vec![Section::Title(s.plan.clone())];
     if let Some(w) = &s.session {
         push_window(&mut v, "Session (5h)", w, now, 5, false);
@@ -179,7 +184,7 @@ fn zai_sections(s: &crate::usage::ZaiSnapshot, now: DateTime<Utc>) -> Vec<Sectio
     v
 }
 
-fn openrouter_sections(s: &crate::usage::OpenRouterSnapshot) -> Vec<Section> {
+fn openrouter_sections(s: &torven_core::usage::OpenRouterSnapshot) -> Vec<Section> {
     let mut v = vec![Section::Title(s.label.clone())];
     let pct = s.consumed_pct().clamp(0, 100) as u16;
     v.push(Section::Spacer);
@@ -223,7 +228,7 @@ fn openrouter_sections(s: &crate::usage::OpenRouterSnapshot) -> Vec<Section> {
 fn push_window(
     sections: &mut Vec<Section>,
     label: &str,
-    w: &crate::usage::UsageWindow,
+    w: &torven_core::usage::UsageWindow,
     now: DateTime<Utc>,
     tol: u32,
     show_pacing: bool,
@@ -256,7 +261,7 @@ fn push_window(
 /// and pinned to the bottom of the area, with the slack absorbed *between*
 /// content and footer. This way shorter vendor panels (OpenRouter, Z.AI)
 /// don't leave a giant gap below the footer.
-pub fn render(f: &mut Frame, area: Rect, theme: &Theme, sections: &[Section]) {
+pub fn render(f: &mut Frame, area: Rect, sections: &[Section]) {
     if sections.is_empty() {
         return;
     }
@@ -286,10 +291,10 @@ pub fn render(f: &mut Frame, area: Rect, theme: &Theme, sections: &[Section]) {
         .split(area);
 
     for (i, s) in sections[..body_end].iter().enumerate() {
-        render_section(f, chunks[i], theme, s);
+        render_section(f, chunks[i], s);
     }
     if pin_last {
-        render_section(f, chunks[chunks.len() - 1], theme, sections.last().unwrap());
+        render_section(f, chunks[chunks.len() - 1], sections.last().unwrap());
     }
 }
 
@@ -303,10 +308,10 @@ fn section_height(s: &Section) -> Constraint {
     }
 }
 
-fn render_section(f: &mut Frame, area: Rect, theme: &Theme, s: &Section) {
-    let accent = parse_hex(&theme.blue).unwrap_or(Color::Cyan);
-    let dim = parse_hex(&theme.dim).unwrap_or(Color::DarkGray);
-    let fg = parse_hex(&theme.fg).unwrap_or(Color::White);
+fn render_section(f: &mut Frame, area: Rect, s: &Section) {
+    let accent = palette::ACCENT;
+    let dim = palette::DIM;
+    let fg = palette::FG;
 
     match s {
         Section::Title(t) => {
@@ -322,16 +327,7 @@ fn render_section(f: &mut Frame, area: Rect, theme: &Theme, s: &Section) {
             severity,
             value_label,
             footnote,
-        } => render_metric(
-            f,
-            area,
-            theme,
-            label,
-            *pct,
-            *severity,
-            value_label,
-            footnote,
-        ),
+        } => render_metric(f, area, label, *pct, *severity, value_label, footnote),
         Section::Text { label, value } => {
             let mut spans = Vec::new();
             if !label.is_empty() {
@@ -343,32 +339,24 @@ fn render_section(f: &mut Frame, area: Rect, theme: &Theme, s: &Section) {
             spans.push(Span::styled(value.clone(), Style::default().fg(dim)));
             f.render_widget(Paragraph::new(Line::from(spans)), area);
         }
-        Section::Block { label, body } => render_block(f, area, theme, label, body),
+        Section::Block { label, body } => render_block(f, area, label, body),
         Section::Spacer => {}
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_metric(
     f: &mut Frame,
     area: Rect,
-    theme: &Theme,
     label: &str,
     pct: u16,
     severity: PaceSeverity,
     value_label: &str,
     footnote: &str,
 ) {
-    let fg = parse_hex(&theme.fg).unwrap_or(Color::White);
-    let dim = parse_hex(&theme.dim).unwrap_or(Color::DarkGray);
-    let bar_color = match severity {
-        PaceSeverity::Low => parse_hex(&theme.green),
-        PaceSeverity::Mid => parse_hex(&theme.yellow),
-        PaceSeverity::High => parse_hex(&theme.orange),
-        PaceSeverity::Critical => parse_hex(&theme.red),
-    }
-    .unwrap_or(Color::Green);
-    let bar_empty = parse_hex(&theme.bar_empty).unwrap_or(Color::Black);
+    let fg = palette::FG;
+    let dim = palette::DIM;
+    let bar_color = format_tui::color_for_severity(severity);
+    let bar_empty = ratatui::style::Color::Rgb(0x1F, 0x21, 0x26);
 
     let inner = Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
@@ -421,9 +409,9 @@ fn render_metric(
     f.render_widget(Paragraph::new(foot), inner[2]);
 }
 
-fn render_block(f: &mut Frame, area: Rect, theme: &Theme, label: &str, body: &[String]) {
-    let fg = parse_hex(&theme.fg).unwrap_or(Color::White);
-    let dim = parse_hex(&theme.dim).unwrap_or(Color::DarkGray);
+fn render_block(f: &mut Frame, area: Rect, label: &str, body: &[String]) {
+    let fg = palette::FG;
+    let dim = palette::DIM;
 
     let mut lines = vec![Line::from(Span::styled(
         format!("  {label}"),
@@ -438,33 +426,21 @@ fn render_block(f: &mut Frame, area: Rect, theme: &Theme, label: &str, body: &[S
     f.render_widget(Paragraph::new(lines), area);
 }
 
-fn parse_hex(s: &str) -> Option<Color> {
-    let s = s.strip_prefix('#').unwrap_or(s);
-    if s.len() != 6 {
-        return None;
-    }
-    Some(Color::Rgb(
-        u8::from_str_radix(&s[0..2], 16).ok()?,
-        u8::from_str_radix(&s[2..4], 16).ok()?,
-        u8::from_str_radix(&s[4..6], 16).ok()?,
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::usage::{
+    use chrono::TimeZone;
+    use torven_core::usage::{
         AnthropicSnapshot, Cents, ExtraUsage, OpenAiCredits, OpenAiSnapshot, OpenAiSource,
         OpenRouterSnapshot, UsageWindow, ZaiSnapshot,
     };
-    use chrono::TimeZone;
 
     fn now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap()
     }
 
     fn ready(snapshot: VendorSnapshot) -> TabState {
-        TabState::Ready(Box::new(crate::tui::app::ReadyTab {
+        TabState::Ready(Box::new(crate::app::ReadyTab {
             snapshot,
             stale: false,
             last_error: None,
