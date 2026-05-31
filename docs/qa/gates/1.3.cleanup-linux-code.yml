@@ -1,0 +1,96 @@
+storyId: 1.3.cleanup-linux-code
+verdict: PASS
+checked_at: '2026-05-31T17:57:53Z'
+reviewer: '@qa (Quinn)'
+schema: 1
+gate: PASS
+status_reason: |
+  All 6 ACs empirically verified: 11 Waybar/Linux files deleted (AC-1), packaging/aur/ removed
+  (AC-2), src/lib.rs cleaned of deleted module declarations (AC-3), cargo build clean in 1.31s
+  (AC-4), cargo test passes 1/1 with zero regressions (AC-5), CLAUDE.md release checklist steps
+  3/4/8/9/10 properly tagged [REMOVIDO no pivot v1.0] (AC-6). Orphan use-statements in
+  src/{tui,openai,openrouter,zai}/ are correctly deferred to Story 1.4 since root src/ is not
+  a [package] in workspace Cargo.toml.
+
+checks:
+  code: pass
+  tests: pass
+  acs: pass
+  regressions: pass
+  performance: n_a
+  security: n_a
+  docs: pass
+
+acs_verified: '6/6'
+
+issues: []
+
+release_gate:
+  cargo_test: pass
+  cargo_clippy: pass
+  cargo_machete: skipped
+
+evidence:
+  cargo_build: 'Finished `dev` profile in 1.31s (zero errors, zero warnings)'
+  cargo_test: '1 passed; 0 failed; 0 ignored — torven_core::tests::ping_returns_crate_name'
+  cargo_clippy: 'Finished `dev` profile in 0.23s with -D warnings (zero warnings)'
+  cargo_machete: 'cargo-machete not installed on host — non-blocking; deferred to CI (Story 1.26)'
+  deletions_verified: |
+    git diff --diff-filter=D main..HEAD confirms 18 deletions:
+    - 11 source files (AC-1): src/{waybar,pango,tooltip,theme,active}.rs +
+      src/widget/{mod,cli,pretty,render,run}.rs + src/bin/torven.rs
+    - 4 AUR files (AC-2): packaging/aur/{PKGBUILD, PKGBUILD-bin, .SRCINFO, .SRCINFO-bin}
+    - 3 orphan snapshots: tests/snapshots/anthropic_e2e__{full_response_bar_text,
+      full_response_tooltip, minimal_response_tooltip}.snap
+  packaging_removed: 'packaging/ directory no longer exists (both packaging/aur/ and parent dir removed)'
+  src_widget_removed: 'src/widget/ directory no longer exists'
+  src_bin_preserved: 'src/bin/torven-tui.rs correctly preserved (only torven.rs deleted)'
+  lib_rs_clean: |
+    src/lib.rs no longer declares pub mod {active,pango,theme,tooltip,waybar,widget}.
+    Header doc rewritten to document post-cleanup state and Story 1.4 migration plan.
+    TODO Story 1.2/1.4 marker added for future uniffi_exports/insights/history/keychain modules.
+  claude_md_updated: |
+    Release checklist steps 3, 4, 8, 9, 10 wrapped in HTML comments with [REMOVIDO no pivot v1.0]
+    markers. Explanatory note added below checklist referencing Story 1.5+ macOS bundle/notarization.
+    "Widget always exits 0" hard invariant commented out. "What lives where" section rewritten
+    to reflect crates/torven-{core,tui} workspace layout with Story 1.4 migration pointer.
+
+orphan_use_statements:
+  status: accepted_scope_decision
+  count: 15 references across 4 files
+  files:
+    - src/tui/app.rs (1 ref)
+    - src/tui/panels.rs (2 refs)
+    - src/tui/settings.rs (1 ref)
+    - src/openai/vendor.rs (5 refs)
+    - src/openrouter/vendor.rs (5 refs)
+    - src/zai/vendor.rs (5 refs)
+  rationale: |
+    Root Cargo.toml is workspace-only ([workspace] with members = ["crates/*"], NO [package]).
+    Files under src/ are not compiled by the build system; they exist on disk solely as the
+    source of truth for the Story 1.4 migration into crates/torven-core/. Therefore these
+    orphan use-statements cannot cause E0432 unresolved import or any other compile error.
+    Empirically verified: cargo build + cargo clippy --all-targets -- -D warnings both clean.
+    Story 1.4 will fix these orphans during the migration; doing it now would create churn
+    in the migration diff. Valid scope deferral.
+
+notes: |
+  Excellent execution. @dev demonstrated discipline by (a) preserving src/bin/torven-tui.rs
+  (not deleting the directory blindly), (b) documenting the orphan use-statements as an
+  explicit observation for QA rather than hiding them, (c) updating CLAUDE.md "Hard invariants"
+  and "What lives where" beyond AC-6 minimum to keep documentation coherent with the
+  post-cleanup state, and (d) deferring legacy tests/anthropic_e2e.rs + tests/live.rs to
+  Story 1.4 with clear reasoning (they don't compile in the workspace-only Cargo.toml).
+
+  Note on "200+ tests" gap: CLAUDE.md historic release checklist references "200+ tests" that
+  were part of the pre-pivot monolithic crate. Current workspace has 1 test (Story 1.1 baseline).
+  This is expected and correct — Story 1.4 will re-enable the legacy test suite under
+  crates/torven-core/tests/. Not a regression.
+
+  cargo-machete check was skipped (tool not installed on host). Non-blocking for this story
+  since no Cargo.toml dependencies were modified. Should be wired into CI in Story 1.26.
+
+  Ready for @devops push.
+
+waiver:
+  active: false
