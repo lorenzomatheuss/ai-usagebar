@@ -1,0 +1,38 @@
+[package]
+name = "torven-core"
+version = "0.5.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+
+[lib]
+name = "torven_core"
+path = "src/lib.rs"
+crate-type = ["staticlib", "rlib", "cdylib"]
+
+[[bin]]
+name = "torven-evals"
+path = "src/bin/torven-evals.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt", "macros", "time", "fs", "process", "signal"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+toml_edit = "0.22"
+clap = { version = "4", features = ["derive", "env"] }
+chrono = { version = "0.4", features = ["serde"] }
+fs2 = "0.4"
+tempfile = "3"
+directories = "5"
+thiserror = "2"
+base64 = "0.22"
+
+[dev-dependencies]
+mockito = "1"
+insta = { version = "1", features = ["json"] }
+pretty_assertions = "1"
+tempfile = "3"

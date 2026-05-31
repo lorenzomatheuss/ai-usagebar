@@ -38,3 +38,31 @@ fmt:
 
 clean:
 	cargo clean
+
+# === Torven Apple/Rust build targets ===
+
+.PHONY: build-core build-app build-all clean-apple help-apple
+
+# Build Rust core as staticlib (aarch64 Apple Silicon)
+build-core:
+	cargo build --release --target aarch64-apple-darwin -p torven-core
+
+# Generate Xcode project from project.yml and build the macOS app (Debug)
+build-app:
+	cd apple && xcodegen generate
+	cd apple && xcodebuild -scheme Torven -configuration Debug build
+
+# Full build: core first (xcframework needed by app), then app
+build-all: build-core build-app
+
+# Clean both Cargo target/ and Xcode generated artifacts
+clean-apple:
+	cargo clean
+	rm -rf apple/Torven.xcodeproj apple/Frameworks apple/build apple/DerivedData
+
+help-apple:
+	@echo "Torven Apple/Rust targets:"
+	@echo "  build-core   - cargo build torven-core (release, aarch64-apple-darwin)"
+	@echo "  build-app    - xcodegen generate + xcodebuild scheme Torven (Debug)"
+	@echo "  build-all    - build-core then build-app"
+	@echo "  clean-apple  - cargo clean + remove apple/Torven.xcodeproj, Frameworks, build"

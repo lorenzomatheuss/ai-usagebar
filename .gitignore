@@ -56,3 +56,20 @@ Thumbs.db
 .gemini/
 .kimi/
 .github/agents/
+
+# Apple/Xcode generated artifacts
+# (use file-glob pattern so the negation for xcshareddata/xcschemes/ can be re-included;
+#  ignoring a directory wholesale with "/" makes negations of child paths impossible)
+apple/Torven.xcodeproj/*
+!apple/Torven.xcodeproj/xcshareddata
+apple/Torven.xcodeproj/xcshareddata/*
+!apple/Torven.xcodeproj/xcshareddata/xcschemes
+apple/Frameworks/
+
+# UniFFI generated bindings
+apple/Torven/Bridge/Generated/
+
+# Xcode user state
+**/xcuserdata/
+**/*.xcuserstate
+**/DerivedData/
