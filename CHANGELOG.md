@@ -7,6 +7,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each release is also published at
 <https://github.com/lorenzomatheuss/ai-usagebar/releases>.
 
+> **Lineage:** Torven is the macOS-native successor to
+> [`ai-usagebar`](https://github.com/akitaonrails/ai-usagebar) by AkitaOnRails,
+> itself a Rust port of [`claudebar`](https://github.com/mryll/claudebar)
+> by mryll. Versions ≤ 0.4.0 trace directly to `ai-usagebar` (Waybar widget +
+> ratatui TUI). v0.5.0-dev forward is the macOS pivot (SwiftUI + Rust core
+> via UniFFI). See [Acknowledgements](README.md#acknowledgements).
+
 ## [Unreleased]
 
 ### Added

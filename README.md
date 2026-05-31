@@ -354,8 +354,15 @@ See [CHANGELOG.md](CHANGELOG.md) for the release history. Each release also has 
 
 ## Acknowledgements
 
-The OpenAI and Anthropic OAuth endpoint references came from [`claudebar`](https://github.com/mryll/claudebar) and [`codexbar`](https://github.com/mryll/codexbar), both by mryll. The visual design, including the bordered Pango tooltip, severity colors, and pacing math, is theirs. This project is a Rust port with multi-vendor support.
+Torven stands on the shoulders of two prior works:
+
+- **[`claudebar`](https://github.com/mryll/claudebar)** by **mryll** — original concept of a minimalist Waybar widget for Claude Max usage tracking. The bordered Pango tooltip, severity colors, and pacing math originated here.
+- **[`ai-usagebar`](https://github.com/akitaonrails/ai-usagebar)** by **AkitaOnRails** — Rust port + multi-vendor expansion (Anthropic, OpenAI, Z.AI, OpenRouter, Gemini) + tabbed TUI + OAuth refresh + atomic cache. This is the immediate upstream of Torven.
+
+**Torven (v0.5.0-dev onwards)** pivots the codebase to native macOS with SwiftUI, preserves the Rust core via UniFFI, and adds AI-powered Insights (eval pipeline + structured outputs), multi-account/multi-project tracking, and SQLite history persistence. macOS-only; the Waybar/Linux path is retired.
+
+The OpenAI and Anthropic OAuth endpoint references came from [`claudebar`](https://github.com/mryll/claudebar) and [`codexbar`](https://github.com/mryll/codexbar), both by mryll.
 
 ## License
 
-MIT.
+MIT — see [`LICENSE`](LICENSE). Dual copyright covers AkitaOnRails (original ai-usagebar) and Lorenzo Matheus (Torven pivot).
