@@ -192,7 +192,7 @@
   - **And** vê 5 cards (um por vendor configurado; vendors não-configurados ficam acinzentados com CTA "Login")
   - **And** se vendor tem multi-account ativo, card mostra account picker dropdown no topo do card OU lista compacta de accounts (decisão de UX detalhada delegada para @ux-design-expert)
   - **And** keyboard navigation funciona: Cmd+1..5 foca vendor N, ↑↓ navega accounts dentro do card focado
-  - **And** popover open p95 <100ms (cold), <50ms (warm) — instrumentado e visível em `aiox doctor`-equivalente
+  - **And** popover open p95 <100ms (cold), <50ms (warm) — instrumentado e visível em `torven doctor`
   - **And** popover fecha em Esc, click fora, ou click no ícone da menu bar novamente
 
 ---

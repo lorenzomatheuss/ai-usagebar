@@ -65,7 +65,7 @@ O nome atual (`ai-usagebar`) carrega 3 problemas:
 | 1 | **Torven** | ❌ Mercedes-Benz repair (Espanha, since 1982) [whois] | ✅ NXDOMAIN | ✅ NXDOMAIN | ✅ 404 | ✅ 404 | ⚠ user existe (EverQuest hobby, 2 forks) | ✅ nenhuma marca direta; só TORVO/THORAVEN similares | 🟢 **Ideal** |
 | 2 | **Loomex** | ⚠ no DNS resolution na .com (provavelmente parked/dropped) | ✅ NXDOMAIN | ✅ NXDOMAIN | ✅ 404 | ✅ 404 | ⚠ user existe (LOOMEX) com 0 repos públicos | ✅ nenhuma marca; só LUMEX (pavers) similar | 🟢 **Ideal** |
 | 3 | **Scopebar** | ✅ "No match" no whois | ✅ NXDOMAIN | ✅ NXDOMAIN | ✅ 404 | ✅ 404 | ✅ 404 (user não existe) | ✅ nenhuma marca encontrada | 🟢 **Ideal** |
-| 4 | **Evalbar** | ❌ "Evalguesser" game site na .com | ✅ NXDOMAIN | ✅ NXDOMAIN | ✅ 404 | ✅ 404 | ❌ 404 (user não existe) | ✅ nenhuma marca encontrada | 🟢 **Ideal** |
+| 4 | **Evalbar** | ❌ "Evalguesser" game site na .com | ✅ NXDOMAIN | ✅ NXDOMAIN | ✅ 404 | ✅ 404 | ✅ 404 (user não existe) | ✅ nenhuma marca encontrada | 🟢 **Ideal** |
 | 5 | **Cresci** | ❌ cresci.com (GoDaddy, since 2000, TLS broken — squatter) | ✅ NXDOMAIN | ✅ NXDOMAIN | ✅ 404 | ✅ 404 | ⚠ Rafael Cresci, dev real (0 repos públicos) | ✅ nenhuma marca encontrada | 🟢 **Viable** (sobrenome italiano comum) |
 | 6 | **Promptbench** | ❌ Microsoft owns (Feb 2025, Dynadot) | ✅ NXDOMAIN | ❌ Cloudflare hosted | ✅ 404 | ✅ 404 | 🔴 **github.com/microsoft/promptbench** projeto ativo (JMLR 2024 paper) | 🔴 Microsoft Research artifact | 🔴 **Blocked** |
 | 7 | **PromptDeck** | ❌ Squarespace 2020 | ❌ inwx.eu registered | ✅ NXDOMAIN | ✅ 404 | ❌ taken | ⚠ user existe, 1 repo JS | ✅ nenhuma marca encontrada | 🟡 **Viable** (mas óbvio/genérico, conota "prompt library" não eval) |

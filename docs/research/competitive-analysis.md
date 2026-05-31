@@ -15,7 +15,7 @@ O nicho **"macOS menu bar app que rastreia uso de LLMs"** está **saturado em 20
 
 ## 1. Direct Competitors (macOS menu bar / LLM usage)
 
-Levantei 13 produtos diretos. Tabela resumida abaixo, seguida de fichas detalhadas dos top concorrentes.
+Levantei 15 produtos — 14 desktop/menu bar (concorrência direta) + 1 CLI/statusline (`ccusage`, concorrência indireta). Tabela resumida abaixo, seguida de fichas detalhadas dos top concorrentes.
 
 | # | Produto | Stack | Forma | Preço | Vendors | Stars/Tração | Status |
 |---|---------|-------|-------|-------|---------|--------------|--------|
