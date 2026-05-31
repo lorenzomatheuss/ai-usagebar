@@ -36,3 +36,23 @@ mockito = "1"
 insta = { version = "1", features = ["json"] }
 pretty_assertions = "1"
 tempfile = "3"
+
+# Bootstrap stubs declared in Story 1.1 — consumed across Wave 1 (1.4 extract-core,
+# 1.6 config-migration, 1.13 history-sqlite, 1.15 ai-insights-core, 1.20 keychain).
+# Remove from this list as each story lands and starts using the dep.
+[package.metadata.cargo-machete]
+ignored = [
+    "tokio",        # Story 1.4 (async ops) + 1.15 (insights streaming)
+    "reqwest",      # Story 1.4 (vendor fetchers migration)
+    "serde",        # Story 1.4 (config + history serialization)
+    "serde_json",   # Story 1.4 (config + history serialization)
+    "toml",         # Story 1.6 (config-migration)
+    "toml_edit",    # Story 1.6 (config-migration)
+    "clap",         # Story 1.16 (torven doctor CLI)
+    "chrono",       # Story 1.13 (history-sqlite timestamps)
+    "fs2",          # Story 1.6 (config file locking)
+    "tempfile",     # Story 1.6 (atomic config writes)
+    "directories",  # Story 1.6 (config paths)
+    "thiserror",    # Story 1.4 (error types)
+    "base64",       # Story 1.20 (keychain credential encoding)
+]
