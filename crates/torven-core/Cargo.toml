@@ -16,6 +16,21 @@ crate-type = ["staticlib", "rlib", "cdylib"]
 name = "torven-evals"
 path = "src/bin/torven-evals.rs"
 
+# UniFFI bindings generator — invoked as `cargo run --bin uniffi-bindgen ...`
+# to keep the bindgen tool version-locked to the `uniffi` runtime dependency.
+# Required by the `uniffi-cli` feature, which is only enabled for this binary
+# so we don't pay the clap + askama compile cost in the library build.
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi-cli"]
+
+[features]
+# Pulls in the `clap`/`askama` CLI dependencies inside `uniffi`. Enabled only
+# when building the `uniffi-bindgen` binary above. Library and `torven-evals`
+# builds skip this to keep the dependency surface lean.
+uniffi-cli = ["uniffi/cli"]
+
 [dependencies]
 tokio = { version = "1", features = ["rt", "macros", "time", "fs", "process", "signal"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
@@ -30,6 +45,23 @@ tempfile = "3"
 directories = "5"
 thiserror = "2"
 base64 = "0.22"
+# UniFFI runtime — exposes Rust functions to Swift via FFI scaffolding (Story 1.2).
+# `tokio` feature is required for `[Async]` annotations in the UDL (used in
+# Story 1.15 for AI Insights streaming).
+#
+# Version pin: 0.29 (not 0.27 as originally specced in Story 1.2). The AR-1
+# spike found that UniFFI 0.27.x emits `#[no_mangle]` in its generated
+# scaffolding without the `unsafe(no_mangle)` wrapper that Rust edition 2024
+# requires. 0.29 ships the fix. See Story 1.2 Change Log for the spike output.
+# See ADR-4 for the binding-tool decision rationale.
+uniffi = { version = "0.29", features = ["tokio"] }
+
+[build-dependencies]
+# UniFFI build-time scaffolding generator — reads `src/torven_core.udl` from
+# `build.rs` and emits the Rust glue code that the runtime crate uses to expose
+# functions through the FFI surface. Version pinned to match the runtime
+# `uniffi` dependency.
+uniffi = { version = "0.29", features = ["build"] }
 
 [dev-dependencies]
 mockito = "1"
