@@ -12,9 +12,9 @@ When cutting a new version (patch, minor, or major):
    - Add a new `## [X.Y.Z] — YYYY-MM-DD` section above the previous one.
    - Categorize entries by **Added / Changed / Fixed / Security** (Keep-A-Changelog).
    - Update the `[Unreleased]` compare link and add a new release link at the bottom.
-3. **Bump `packaging/aur/PKGBUILD`** — `pkgver=X.Y.Z`, `pkgrel=1`, reset `sha256sums` to `'SKIP'`.
-4. **Bump `packaging/aur/PKGBUILD-bin`** — same `pkgver`, `pkgrel=1`, reset both
-   `sha256sums_x86_64` and `sha256sums_aarch64` to `'SKIP'`.
+<!-- 3. [REMOVIDO no pivot v1.0] **Bump `packaging/aur/PKGBUILD`** — `pkgver=X.Y.Z`, `pkgrel=1`, reset `sha256sums` to `'SKIP'`. -->
+<!-- 4. [REMOVIDO no pivot v1.0] **Bump `packaging/aur/PKGBUILD-bin`** — same `pkgver`, `pkgrel=1`, reset both
+   `sha256sums_x86_64` and `sha256sums_aarch64` to `'SKIP'`. -->
 5. **Run gate before tagging**:
    ```
    cargo test                                  # 200+ tests must pass
@@ -30,7 +30,7 @@ When cutting a new version (patch, minor, or major):
 7. **Wait for CI** (3–5 min): the tag push auto-triggers
    `.github/workflows/release.yml` which builds both x86_64 and
    aarch64 tarballs and publishes a GitHub Release.
-8. **Pin the real sha256s** in both PKGBUILDs:
+<!-- 8. [REMOVIDO no pivot v1.0] **Pin the real sha256s** in both PKGBUILDs:
    ```
    cd packaging/aur
    # Source:
@@ -43,14 +43,22 @@ When cutting a new version (patch, minor, or major):
    # macOS ARM64:
    curl -sL https://github.com/lorenzomatheuss/torven/releases/download/vX.Y.Z/torven-macos-aarch64.tar.gz.sha256
    ```
-9. **Regenerate `.SRCINFO`s**:
+-->
+<!-- 9. [REMOVIDO no pivot v1.0] **Regenerate `.SRCINFO`s**:
    ```
    cd packaging/aur && makepkg --printsrcinfo > .SRCINFO
    # And from a scratch dir with the bin PKGBUILD: makepkg --printsrcinfo > .SRCINFO-bin
    ```
-10. **Push to both AUR repos** (separate git repos):
+-->
+<!-- 10. [REMOVIDO no pivot v1.0] **Push to both AUR repos** (separate git repos):
     - `~/Projects/aur-torven` → `ssh://aur@aur.archlinux.org/torven.git`
     - `~/Projects/aur-torven-bin` → `ssh://aur@aur.archlinux.org/torven-bin.git`
+-->
+
+> **Nota Story 1.3 (pivot v1.0):** `packaging/aur/` foi removido. Distribuição
+> migrou para macOS native bundle (`.app` + notarization via `tauri.conf.json`
+> em Story 1.5+). Passos 3, 4, 8, 9, 10 deste checklist permanecem comentados
+> como referência histórica até serem reescritos para o fluxo macOS.
 
 **Anything skipping any of 1–10 is an incomplete release.** Tags are
 immutable; do **not** force-move a tag once it's pushed. Cut a new
@@ -58,10 +66,13 @@ patch version instead.
 
 ## Hard invariants — never break these
 
+<!-- [REMOVIDO no pivot v1.0]
 - **Widget always exits 0.** Waybar hides modules that don't. Wrap
   every error in a fallback `⚠` JSON. See `widget::run::fallback`.
-- **Cache writes are atomic** (tempfile + persist). Multi-monitor
-  Waybar instances coexist via per-vendor `flock`.
+-->
+- **Cache writes are atomic** (tempfile + persist). Per-vendor `flock`
+  guards concurrent writes (was for multi-monitor Waybar; still useful
+  for menu-bar app refreshing from multiple sources).
 - **Tag immutability.** Never `git push --force origin vX.Y.Z` once a
   release is public. The one-time exception in v0.3.0 was a mistake.
 - **No secrets in tracked files.** Inline API keys in config.toml are
@@ -100,17 +111,24 @@ vendor's response shape drifts:
 
 ## What lives where
 
-- `src/active.rs` — scroll-cycle active vendor state file
+> **Story 1.3 cleanup (pivot v1.0):** the Waybar/Pango/AUR layer was deleted.
+> `src/active.rs`, `src/widget/`, `src/tooltip.rs`, `src/pango.rs`,
+> `src/theme.rs`, `src/waybar.rs`, `src/bin/torven.rs`, and `packaging/aur/`
+> no longer exist. Story 1.4 will migrate the remaining flat `src/` into
+> `crates/torven-core/`.
+
+- `crates/torven-core/` — Rust core library (workspace crate, lib + bins)
+- `crates/torven-tui/` — Ratatui developer TUI (workspace crate)
 - `src/anthropic/`, `src/openai/`, `src/openrouter/`, `src/zai/` —
-  per-vendor types + fetch + render
-- `src/tui/settings.rs` — Settings overlay (toml_edit-backed,
-  auto-signals waybar after save)
+  per-vendor types + fetch (cross-platform; awaiting migration to
+  `crates/torven-core/` in Story 1.4)
+- `src/tui/settings.rs` — Settings overlay (toml_edit-backed; auto-signal
+  to waybar removed in Story 1.3; reload mechanism will be redesigned in
+  the Tauri app)
 - `src/tui/panels.rs` — native ratatui per-vendor panels
-- `src/widget/` — Waybar widget shell (CLI, render, pretty, run)
-- `src/tooltip.rs` — shared Pango bordered-box renderer (used by
-  every vendor's tooltip)
-- `packaging/aur/PKGBUILD` — source-build AUR pkg
-- `packaging/aur/PKGBUILD-bin` — prebuilt-binary AUR pkg (multi-arch)
-- `.github/workflows/release.yml` — tag-driven release (x86_64 + aarch64)
-- `tests/anthropic_e2e.rs` — mockito + insta snapshot tests
+- `.github/workflows/release.yml` — tag-driven release (macOS .app + tarballs
+  in Story 1.5+; Linux x86_64/aarch64 builds retained until Story 1.26 trims)
+- `tests/anthropic_e2e.rs` — mockito + insta snapshot tests (legacy; will
+  be moved into `crates/torven-core/tests/` in Story 1.4 and updated to
+  the new render shape)
 - `tests/live.rs` — `#[ignore]`d smoke tests against real APIs
