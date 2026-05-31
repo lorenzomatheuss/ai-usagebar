@@ -1,0 +1,84 @@
+schema: 1
+storyId: 1.4.extract-torven-core
+story: '1.4'
+gate: PASS
+verdict: PASS
+status_reason: 'Workspace extraction complete: 150 tests pass, format.rs Pango→RawMetrics migration clean, all 8 ACs verified, DEBT-001 reduced 13→0 ignored deps.'
+reviewer: '@qa (Quinn)'
+updated: '2026-05-31T00:00:00Z'
+checked_at: '2026-05-31T00:00:00Z'
+
+checks:
+  code: pass
+  tests: pass
+  acs: pass
+  regressions: pass
+  performance: n_a
+  security: pass
+  docs: pass
+
+acs_verified: '8/8'
+acs_breakdown:
+  AC-1: 'PASS — all vendors moved to crates/torven-core/src/vendors/{anthropic,openai,openrouter,zai}/ with full sub-tree (creds.rs, fetch.rs, mod.rs, oauth.rs where applicable, types.rs). Gemini intentionally omitted per Article IV (no invention) — documented in T1.'
+  AC-2: 'PASS — cache.rs, countdown.rs, error.rs, pacing.rs, usage.rs, vendor.rs all present in crates/torven-core/src/.'
+  AC-3: 'PASS — config.rs moved identically; diff against HEAD~1:src/config.rs is empty. Rebrand strings (ai-usagebar → torven) had already landed in commit c0973f6 pre-Story-1.4.'
+  AC-4: 'PASS — format.rs implements RawMetrics + LabelKind exactly as spec. Zero <span> markup anywhere in crates/ (grep clean). compute_metrics() projects all 4 vendor variants. 8 unit tests covering worst-of windows, OAuth-unlinked, and per-vendor edges.'
+  AC-5: 'PASS — crates/torven-tui/src/format_tui.rs created with format_for_tui(&RawMetrics) -> String, color_for_severity(PaceSeverity), and TUI palette constants.'
+  AC-6: 'PASS — src/tui/ migrated to crates/torven-tui/src/. Cross-crate imports rewritten to torven_core::* (16 use-sites verified). Intra-crate use crate::* limited to local modules (app, view, panels, format_tui, settings) — correct.'
+  AC-7: 'PASS — cargo build --workspace finishes in 3.21s; cargo test --workspace passes 150 tests (118 core lib + 3 anthropic_e2e + 4 ignored live + 29 tui lib).'
+  AC-8: 'PASS — src/ directory removed entirely (ls returns ENOENT). Workspace root Cargo.toml contains only [workspace], [workspace.package], and [profile.release] — no [package] section.'
+
+tests_count:
+  total: 150
+  core: 118
+  tui: 29
+  e2e_mockito: 3
+  live_ignored: 4
+
+build_gate:
+  cargo_build: 'green (3.21s)'
+  cargo_test: 'green (150 passing, 4 live ignored)'
+  cargo_clippy: 'clean (--workspace --all-targets -D warnings)'
+  cargo_machete: "Good job! (zero unused deps, zero false-positive ignored entries)"
+
+debt_001_progress:
+  before: 'torven-core ignored: 13 entries + torven-tui ignored: 2 entries (ratatui, crossterm)'
+  after: 'torven-core ignored: [] (empty) + torven-tui ignored: section removed entirely'
+  rationale: 'Every bootstrap stub from Story 1.1 ended up consumed by 1.4. cargo machete confirms zero false-positives. Comment in torven-core/Cargo.toml documents intentional empty list for forward-looking Wave 1 stories (1.13/1.15/1.20).'
+  wave1_followup: 'Monitor that Stories 1.13/1.15/1.20 do not re-introduce ignored entries without justification.'
+
+vendor_deletion_validation:
+  openai_vendor_rs:
+    deleted_size_lines: 387
+    pre_deletion_imports: 'crate::countdown, crate::format::{placeholders,substitute}, crate::pacing, crate::pango (color_span, escape, severity_color, severity_for), crate::theme::Theme, crate::tooltip::{Line,render_bordered}, crate::vendor::{RenderOpts,VendorOutcome}, crate::waybar::{Class,WaybarOutput}'
+    purpose: 'Waybar Pango renderer (DEFAULT_FORMAT = "{oai_session_pct}% · {oai_session_reset}")'
+    safe_deletion: true
+  openrouter_vendor_rs:
+    deleted_size_lines: 337
+    pre_deletion_imports: 'crate::format, crate::pacing, crate::pango, crate::theme::Theme, crate::tooltip, crate::vendor::{RenderOpts,VendorOutcome}, crate::waybar::{Class,WaybarOutput}'
+    purpose: 'Waybar Pango renderer ("OpenRouter renderer — bar text + bordered Pango tooltip")'
+    safe_deletion: true
+  zai_vendor_rs:
+    deleted_size_lines: 312
+    pre_deletion_imports: 'crate::countdown, crate::format, crate::pacing, crate::pango, crate::theme::Theme, crate::tooltip, crate::vendor::{RenderOpts,VendorOutcome}, crate::waybar::{Class,WaybarOutput}'
+    purpose: 'Waybar Pango renderer ("Z.AI renderer — bar text + bordered Pango tooltip")'
+    safe_deletion: true
+  verdict: safe_deletion
+  reasoning: 'All three deleted vendor.rs files were confirmed Waybar Pango renderers importing the layer that Story 1.3 already deleted (pango.rs, theme.rs, tooltip.rs, waybar.rs). They were dead code that could no longer compile post-Story-1.3 — the old top-level src/lib.rs masked this by not being a workspace member. Story 1.4 was forced to delete them to unblock workspace compilation (out-of-scope addendum cleanly documented in Tasks/Subtasks "Renderer cleanup" section). The functional surface they exposed (RenderOpts + Waybar JSON output) is replaced by the cross-platform RawMetrics + per-UI renderers (Swift, TUI format_tui).'
+
+security:
+  hardcoded_credentials_scan: 'clean — only test fixtures in config.rs (sk-zai-inline, sk-or-inline) which are intentional test strings, not real credentials'
+  oauth_history_preservation: 'git mv preserved history for vendors/anthropic/oauth.rs and vendors/openai/oauth.rs; vendors/anthropic/creds.rs got one functional change (read_from returns Credentials for ENOENT vs Io) documented in story File List MODIFIED section'
+  secrets_in_diff: 'none'
+
+top_issues: []
+
+issues: []
+
+waiver:
+  active: false
+
+handoff:
+  next_agent: '@devops'
+  next_command: '*push'
+  recommendation: 'PASS — safe to push. Branch worktree-agent-ab153cd2bb9a063dd contains exactly one commit (c6f9538) since main, with all gates green. No regressions, no security issues, no leftover Pango/theme/waybar references.'
