@@ -37,15 +37,15 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use ai_usagebar::anthropic;
-use ai_usagebar::cache::Cache;
-use ai_usagebar::openai;
-use ai_usagebar::openrouter;
-use ai_usagebar::zai;
+use torven::anthropic;
+use torven::cache::Cache;
+use torven::openai;
+use torven::openrouter;
+use torven::zai;
 
 fn xdg_cache_for(test: &str) -> Cache {
     // Use a per-test scratch dir so smoke tests don't clobber the real cache.
-    let base = std::env::temp_dir().join(format!("ai-usagebar-smoke-{test}"));
+    let base = std::env::temp_dir().join(format!("torven-smoke-{test}"));
     let _ = std::fs::remove_dir_all(&base);
     Cache::at(base)
 }

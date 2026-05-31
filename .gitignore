@@ -20,3 +20,56 @@ packaging/aur/pkg/
 packaging/aur/src/
 packaging/aur/*.pkg.tar.*
 packaging/aur/*.tar.gz
+
+# Environment & Secrets (AIOX)
+.env.*.local
+*.key
+*.pem
+
+# Dependencies (AIOX)
+node_modules/
+node_modules
+
+# Build & Logs (AIOX)
+dist/
+build/
+*.log
+logs/
+
+# IDE & OS (AIOX)
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# AIOX Local (AIOX)
+.aiox-core/local/
+.claude/settings.local.json
+.aiox/install-log.txt
+
+# Personal AI tooling configs — not part of the project distribution
+.aiox-core/
+.aiox/
+.antigravity/
+.codex/
+.cursor/
+.gemini/
+.kimi/
+.github/agents/
+
+# Apple/Xcode generated artifacts
+# (use file-glob pattern so the negation for xcshareddata/xcschemes/ can be re-included;
+#  ignoring a directory wholesale with "/" makes negations of child paths impossible)
+apple/Torven.xcodeproj/*
+!apple/Torven.xcodeproj/xcshareddata
+apple/Torven.xcodeproj/xcshareddata/*
+!apple/Torven.xcodeproj/xcshareddata/xcschemes
+apple/Frameworks/
+
+# UniFFI generated bindings
+apple/Torven/Bridge/Generated/
+
+# Xcode user state
+**/xcuserdata/
+**/*.xcuserstate
+**/DerivedData/

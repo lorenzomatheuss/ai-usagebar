@@ -1,4 +1,4 @@
-//! Config file at `~/.config/ai-usagebar/config.toml`.
+//! Config file at `~/.config/torven/config.toml`.
 //!
 //! Layout:
 //! ```toml
@@ -139,13 +139,13 @@ pub fn resolve_api_key(
     }
     Err(crate::error::AppError::Credentials(format!(
         "{vendor_label}: no API key. Either export {env_var_name} or set \
-         `api_key` under [{}] in ~/.config/ai-usagebar/config.toml (chmod 600).",
+         `api_key` under [{}] in ~/.config/torven/config.toml (chmod 600).",
         vendor_label.to_lowercase()
     )))
 }
 
 impl Config {
-    /// Load from `~/.config/ai-usagebar/config.toml`. Returns defaults if the
+    /// Load from `~/.config/torven/config.toml`. Returns defaults if the
     /// file doesn't exist; errors only on actual parse failures.
     pub fn load() -> Result<Self> {
         let Some(path) = default_path() else {
@@ -181,7 +181,7 @@ impl Config {
 }
 
 fn default_path() -> Option<PathBuf> {
-    let proj = directories::ProjectDirs::from("", "", "ai-usagebar")?;
+    let proj = directories::ProjectDirs::from("", "", "torven")?;
     Some(proj.config_dir().join("config.toml"))
 }
 
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn missing_file_uses_defaults() {
-        let path = std::path::Path::new("/tmp/does-not-exist-ai-usagebar-test");
+        let path = std::path::Path::new("/tmp/does-not-exist-torven-test");
         let c = Config::load_from(path).unwrap();
         assert!(c.is_enabled(VendorId::Anthropic));
     }

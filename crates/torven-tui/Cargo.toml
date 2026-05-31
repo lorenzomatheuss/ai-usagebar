@@ -1,0 +1,17 @@
+[package]
+name = "torven-tui"
+version = "0.5.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Ratatui-based developer TUI for Torven (debug/diagnostics surface)"
+
+[[bin]]
+name = "torven-tui"
+path = "src/main.rs"
+
+[dependencies]
+torven-core = { path = "../torven-core" }
+ratatui = "0.29"
+crossterm = "0.28"

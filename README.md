@@ -1,15 +1,15 @@
-# ai-usagebar
+# torven
 
 Waybar widget and tabbed TUI for AI plan usage across **Anthropic Claude**, **OpenAI Codex/ChatGPT**, **Z.AI (GLM)**, and **OpenRouter**.
 
-This started as a Rust port of [`claudebar`](https://github.com/mryll/claudebar) and stays drop-in compatible with it. It keeps the minimalist Pango-bordered tooltip, Omarchy theme auto-detection, and flock-protected OAuth refresh, then adds three more vendors and a proper testable codebase instead of one long shell script.
+This started as a Rust port of [`claudebar`](https://github.com/mryll/claudebar) and stays drop-in compatible with it. It keeps the minimalist Pango-bordered tooltip, Omarchy theme auto-detection, and flock-protected OAuth refresh, then adds four more vendors and a proper testable codebase instead of one long shell script.
 
 ![Waybar widget showing `cld 29% · 1h 12m` in the top-right, with the hover tooltip showing Claude Max 20x session/weekly/sonnet/extra-usage progress bars](screenshot.png)
 
 ## Features
 
 - **Per-vendor Waybar modules** with the same JSON shape as claudebar.
-- **Tabbed TUI** (`ai-usagebar-tui`) with Tab/h/l switching, per-tab refresh, and 60-second auto-refresh. Native ratatui widgets fill the available terminal width and keep the vendor tabs visually consistent.
+- **Tabbed TUI** (`torven-tui`) with Tab/h/l switching, per-tab refresh, and 60-second auto-refresh. Native ratatui widgets fill the available terminal width and keep the vendor tabs visually consistent.
 - **Scroll-to-cycle on the bar**: wire `on-scroll-up` / `on-scroll-down`, and one bar item cycles through your enabled vendors.
 - **Config-driven primary vendor**: set `[ui] primary` once; the widget shows that vendor by default and the TUI opens on its tab.
 - **Local testing tools**: `--pretty` renders ANSI-colored terminal output (auto-detects TTY), and `--watch N` re-renders every N seconds.
@@ -26,15 +26,38 @@ This started as a Rust port of [`claudebar`](https://github.com/mryll/claudebar)
 Two packages. Pick one:
 
 ```bash
-yay -S ai-usagebar-bin    # prebuilt binary from GitHub Releases (fast, ~5s install)
-yay -S ai-usagebar        # compiles from source (~30-60s, hermetic)
+yay -S torven-bin    # prebuilt binary from GitHub Releases (fast, ~5s install)
+yay -S torven        # compiles from source (~30-60s, hermetic)
 ```
 
 The `-bin` variant downloads the same x86_64 ELF that CI built and tested. The source variant compiles locally with your toolchain. Both install identical binaries to `/usr/bin/`. If you already have one installed, switch with `yay -S` the other package; pacman handles the swap through `conflicts`/`provides`.
 
+### macOS Apple Silicon
+
+Use the macOS ARM64 release tarball when available:
+
+```bash
+mkdir -p ~/.local/bin
+curl -fsSL https://github.com/lorenzomatheuss/torven/releases/latest/download/torven-macos-aarch64.tar.gz \
+  | tar xz -C ~/.local/bin torven torven-tui
+```
+
+Make sure `~/.local/bin` is in your `PATH`, then run:
+
+```bash
+torven --vendor openai
+torven-tui
+```
+
+On macOS, the CLI and TUI are the supported interfaces. Waybar and Hyprland
+configuration are Linux desktop integration paths.
+
 ### From source
 
 ```bash
+# macOS: install Rust first if needed:
+# brew install rust
+
 cargo build --release
 sudo make install                  # → /usr/local/bin
 # or
@@ -54,7 +77,7 @@ Each vendor authenticates a little differently. Anthropic and OpenAI use OAuth c
 
 ### Credential resolution order (for API-key vendors)
 
-For each API-key vendor, ai-usagebar checks in this order:
+For each API-key vendor, torven checks in this order:
 
 1. **Env var named by `api_key_env`** in config (defaults: `ZAI_API_KEY`, `OPENROUTER_API_KEY`). If set + non-empty, used.
 2. **Inline `api_key`** in the same config section.
@@ -62,13 +85,13 @@ For each API-key vendor, ai-usagebar checks in this order:
 
 ### Security
 
-- If you put inline `api_key` values in config, `chmod 600 ~/.config/ai-usagebar/config.toml`. The default behavior reads only env vars, which is safer when your config might be world-readable.
+- If you put inline `api_key` values in config, `chmod 600 ~/.config/torven/config.toml`. The default behavior reads only env vars, which is safer when your config might be world-readable.
 - Don't commit your config dir if you check it into dotfiles unless you've redacted `api_key` lines.
-- OAuth credential files (`~/.claude/.credentials.json`, `~/.codex/auth.json`) are managed by their respective CLIs and already chmod-protected.
+- OAuth credential files (`~/.claude/.credentials.json`, `~/.codex/auth.json`) are managed by their respective CLIs and already chmod-protected. Claude Desktop's `buddy-tokens.json` is only a local token counter and cannot authenticate Anthropic's usage API.
 
 ## Configuration
 
-`~/.config/ai-usagebar/config.toml` (optional — defaults enable all four vendors). Full example:
+`~/.config/torven/config.toml` (optional — defaults enable all vendors). Full example:
 
 ```toml
 [ui]
@@ -100,27 +123,27 @@ api_key_env = "OPENROUTER_API_KEY"
 
 ```bash
 # Local testing — auto-detects TTY and renders human-readable output.
-ai-usagebar                        # uses [ui] primary (defaults to anthropic)
-ai-usagebar --vendor openai
-ai-usagebar --vendor zai
-ai-usagebar --vendor openrouter
+torven                        # uses [ui] primary (defaults to anthropic)
+torven --vendor openai
+torven --vendor zai
+torven --vendor openrouter
 
 # Force Waybar JSON (e.g. piping into jq).
-ai-usagebar --json
+torven --json
 
 # Live preview while iterating on --format / --tooltip-format.
-ai-usagebar --vendor openrouter --watch 5
+torven --vendor openrouter --watch 5
 
 # Interactive TUI with tabs.
-ai-usagebar-tui
+torven-tui
 ```
 
 ## Standalone TUI — no Waybar required
 
-The two binaries are independent. If you don't run Waybar (or just want to check usage occasionally rather than have it on your bar permanently), `ai-usagebar-tui` works as a fully standalone terminal app:
+The two binaries are independent. If you don't run Waybar (or you are on macOS and just want to check usage occasionally), `torven-tui` works as a fully standalone terminal app:
 
 ```bash
-ai-usagebar-tui                    # opens in your current terminal
+torven-tui                    # opens in your current terminal
 ```
 
 It runs in any terminal emulator (Kitty, Alacritty, Foot, Ghostty, etc.), works in plain SSH sessions, and doesn't need a compositor or window manager integration. All controls and the Settings overlay work the same way. Use it as:
@@ -129,7 +152,7 @@ It runs in any terminal emulator (Kitty, Alacritty, Foot, Ghostty, etc.), works 
 - A foreground monitor on a secondary screen or tmux pane while you code
 - A shell-only tool on remote machines (just install the binary; no Waybar/Hyprland dependencies)
 
-The Waybar widget is optional. The TUI is the best way to see all four vendors at once, even if you never set up the widget.
+The Waybar widget is optional. The TUI is the best way to see all vendors at once, even if you never set up the widget.
 
 ## Waybar config
 
@@ -141,18 +164,18 @@ Use one bar item and scroll through your vendors. The TUI on-click still shows t
 "modules-right": ["custom/aibar", ...],
 
 "custom/aibar": {
-    "exec": "ai-usagebar --format '{vendor_short} {session_pct}% · {session_reset}'",
+    "exec": "torven --format '{vendor_short} {session_pct}% · {session_reset}'",
     "return-type": "json",
     "interval": 300,
     "signal": 13,
     "tooltip": true,
-    "on-click": "ai-usagebar-tui",
-    "on-scroll-up":   "ai-usagebar --cycle-next",
-    "on-scroll-down": "ai-usagebar --cycle-prev"
+    "on-click": "torven-tui",
+    "on-scroll-up":   "torven --cycle-next",
+    "on-scroll-down": "torven --cycle-prev"
 }
 ```
 
-The `{vendor_short}` placeholder always expands to a 3-letter vendor ID (`cld` / `gpt` / `zai` / `opr`), so the bar text tells you which vendor is active. The other usage placeholders (`{session_pct}` for Anthropic, `{oai_session_pct}` for OpenAI, etc.) are vendor-specific. If you want one format string for all four cycled vendors, prefer the generic placeholders where available. For now, `{session_pct}` works for Anthropic only; the other vendors expose their own `{oai_*}` / `{zai_*}` / `{or_*}` families, which expand to empty strings for vendors that don't define them.
+The `{vendor_short}` placeholder always expands to a 3-letter vendor ID (`cld` / `gpt` / `zai` / `opr`), so the bar text tells you which vendor is active. If you want one format string for all cycled vendors, prefer generic placeholders where available. `{session_pct}`, `{session_reset}`, and `{plan}` work for Anthropic and OpenAI; the other vendors expose their own `{oai_*}` / `{zai_*}` / `{or_*}` families.
 
 `signal: 13` lets the scroll-cycle commands refresh the bar instantly (via `SIGRTMIN+13`) instead of waiting for the next 300s interval.
 
@@ -164,26 +187,26 @@ If you'd rather see them all at once:
 "modules-right": ["custom/claude", "custom/openai", "custom/openrouter", "custom/zai"],
 
 "custom/claude": {
-    "exec": "ai-usagebar --vendor anthropic --icon '󰚩'",
+    "exec": "torven --vendor anthropic --icon '󰚩'",
     "return-type": "json",
     "interval": 300,
     "tooltip": true,
-    "on-click": "ai-usagebar-tui"
+    "on-click": "torven-tui"
 },
 "custom/openai": {
-    "exec": "ai-usagebar --vendor openai --icon '󱢆'",
+    "exec": "torven --vendor openai --icon '󱢆'",
     "return-type": "json",
     "interval": 300,
     "tooltip": true
 },
 "custom/openrouter": {
-    "exec": "ai-usagebar --vendor openrouter --icon '󱙺' --format '{or_balance} · {or_used_today}'",
+    "exec": "torven --vendor openrouter --icon '󱙺' --format '{or_balance} · {or_used_today}'",
     "return-type": "json",
     "interval": 600,
     "tooltip": true
 },
 "custom/zai": {
-    "exec": "ai-usagebar --vendor zai --icon '󰚩'",
+    "exec": "torven --vendor zai --icon '󰚩'",
     "return-type": "json",
     "interval": 300,
     "tooltip": true
@@ -194,20 +217,20 @@ If you'd rather see them all at once:
 
 ## Hyprland: float the TUI window
 
-By default Hyprland tiles the TUI. To make `ai-usagebar-tui` open as a centered floating window, the same way Omarchy floats its own settings TUIs (Wi-Fi/`impala`, audio/`wiremix`, Bluetooth/`bluetui`), add this to `~/.config/hypr/hyprland.conf` or any sourced `.conf`, such as `looknfeel.conf`:
+By default Hyprland tiles the TUI. To make `torven-tui` open as a centered floating window, the same way Omarchy floats its own settings TUIs (Wi-Fi/`impala`, audio/`wiremix`, Bluetooth/`bluetui`), add this to `~/.config/hypr/hyprland.conf` or any sourced `.conf`, such as `looknfeel.conf`:
 
 ```ini
-# ai-usagebar TUI — float + center + fixed size. omarchy-launch-tui sets the
-# app-id from the binary basename, so the class is org.omarchy.ai-usagebar-tui.
+# torven TUI — float + center + fixed size. omarchy-launch-tui sets the
+# app-id from the binary basename, so the class is org.omarchy.torven-tui.
 # 875x600 matches the size Omarchy gives its own `floating-window`-tagged TUIs.
-windowrule = float on, match:class ^(org\.omarchy\.ai-usagebar-tui)$
-windowrule = center on, match:class ^(org\.omarchy\.ai-usagebar-tui)$
-windowrule = size 875 600, match:class ^(org\.omarchy\.ai-usagebar-tui)$
+windowrule = float on, match:class ^(org\.omarchy\.torven-tui)$
+windowrule = center on, match:class ^(org\.omarchy\.torven-tui)$
+windowrule = size 875 600, match:class ^(org\.omarchy\.torven-tui)$
 ```
 
 Then `hyprctl reload` (no logout needed).
 
-> Omarchy tags a hardcoded list of TUI app-ids with `floating-window` in `~/.local/share/omarchy/default/hypr/apps/system.conf`, which then applies `float + center + size 875 600`. The rules above set those values directly, so the size is deterministic regardless of which config is sourced first. If you launch the TUI differently (e.g. `kitty -e ai-usagebar-tui`), replace the class regex with whatever `hyprctl clients` reports for your terminal.
+> Omarchy tags a hardcoded list of TUI app-ids with `floating-window` in `~/.local/share/omarchy/default/hypr/apps/system.conf`, which then applies `float + center + size 875 600`. The rules above set those values directly, so the size is deterministic regardless of which config is sourced first. If you launch the TUI differently (e.g. `kitty -e torven-tui`), replace the class regex with whatever `hyprctl clients` reports for your terminal.
 
 > Hyprland 0.46+ uses the unified `windowrule` keyword with `match:…` filters. The older `windowrulev2 = …, class:…` syntax still works on legacy Hyprland but is deprecated — use the form above on current Omarchy / Hyprland releases.
 
@@ -222,7 +245,7 @@ Then `hyprctl reload` (no logout needed).
 
 ### Endpoint stability
 
-Three of the four endpoints are undocumented. The Anthropic and OpenAI endpoints are used by their official CLIs (`claude` and `codex`), so removing them would break those tools too. That makes them less shaky than scraped web endpoints. Z.AI's monitor endpoint is reverse-engineered from a third-party plugin; treat it as the most fragile one.
+Three of the four endpoint families are undocumented. The Anthropic and OpenAI endpoints are used by their official CLIs (`claude` and `codex`), so removing them would break those tools too. That makes them less shaky than scraped web endpoints. Z.AI's monitor endpoint is reverse-engineered from a third-party plugin; treat it as the most fragile one.
 
 When an endpoint drifts, **run `make smoke`**. The live API tests check the exact fields this project depends on and produce a precise failure pointing at what changed. Paste the failure back into Claude Code and the affected `types.rs` can usually be updated mechanically.
 
@@ -254,8 +277,8 @@ When an endpoint drifts, **run `make smoke`**. The live API tests check the exac
 ## Local development
 
 ```bash
-ai-usagebar --watch 5                              # iterate on --format live
-ai-usagebar --vendor openrouter --format '{or_balance} · today {or_used_today}'
+torven --watch 5                              # iterate on --format live
+torven --vendor openrouter --format '{or_balance} · today {or_used_today}'
 
 make test                                          # unit + integration
 source ~/.config/zsh/secrets                       # only needed for live smoke
@@ -265,7 +288,7 @@ make clippy                                        # cargo clippy -D warnings
 
 ## TUI controls
 
-![ai-usagebar-tui showing the OpenAI tab — Codex 5h and weekly gauges, Credits block with message-count ranges, tabs at top, key hints in the footer](screenshots/tui-openai.png)
+![torven-tui showing the OpenAI tab — Codex 5h and weekly gauges, Credits block with message-count ranges, tabs at top, key hints in the footer](screenshots/tui-openai.png)
 
 - `Tab` / `l` / `→` — next tab
 - `Shift+Tab` / `h` / `←` — previous tab
@@ -276,7 +299,7 @@ make clippy                                        # cargo clippy -D warnings
 
 Auto-refresh runs every 60 seconds in the background. Vendors use the same layout. Here's OpenRouter showing the credit balance gauge (red because 98% is consumed), usage-by-period totals, and tier:
 
-![ai-usagebar-tui showing the OpenRouter tab — Credit balance gauge at 98% in red ($13.67 left of $900), Usage by period with today/week/month, paid tier](screenshots/tui-openrouter.png)
+![torven-tui showing the OpenRouter tab — Credit balance gauge at 98% in red ($13.67 left of $900), Usage by period with today/week/month, paid tier](screenshots/tui-openrouter.png)
 
 ### Settings overlay
 
@@ -295,7 +318,7 @@ Key bindings inside the overlay:
 - `Ctrl-S` — save and close
 - `Esc` — discard and close
 
-Save writes to `~/.config/ai-usagebar/config.toml` via `toml_edit` so your existing comments and unrelated fields are preserved. The file is automatically `chmod 600`ed on save, so inline keys aren't world-readable.
+Save writes to `~/.config/torven/config.toml` via `toml_edit` so your existing comments and unrelated fields are preserved. The file is automatically `chmod 600`ed on save, so inline keys aren't world-readable.
 
 After save, the Settings overlay fires `SIGRTMIN+13` so any Waybar module configured with `signal: 13` refreshes immediately. You don't need to wait for the next 300-second interval or kick the bar by hand. The TUI's own tabs also re-fetch right away, so a freshly set API key takes effect on the spot.
 
@@ -309,12 +332,19 @@ If your module doesn't use `signal: 13`, the signal is a no-op and the bar will 
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for the release history. Each release also has its own page at <https://github.com/akitaonrails/ai-usagebar/releases> with the auto-generated install snippet and checksum.
+See [CHANGELOG.md](CHANGELOG.md) for the release history. Each release also has its own page at <https://github.com/lorenzomatheuss/torven/releases> with the auto-generated install snippet and checksum.
 
 ## Acknowledgements
 
-The OpenAI and Anthropic OAuth endpoint references came from [`claudebar`](https://github.com/mryll/claudebar) and [`codexbar`](https://github.com/mryll/codexbar), both by mryll. The visual design, including the bordered Pango tooltip, severity colors, and pacing math, is theirs. This project is a Rust port with multi-vendor support.
+Torven stands on the shoulders of two prior works:
+
+- **[`claudebar`](https://github.com/mryll/claudebar)** by **mryll** — original concept of a minimalist Waybar widget for Claude Max usage tracking. The bordered Pango tooltip, severity colors, and pacing math originated here.
+- **[`ai-usagebar`](https://github.com/akitaonrails/ai-usagebar)** by **AkitaOnRails** — Rust port + multi-vendor expansion (Anthropic, OpenAI, Z.AI, OpenRouter, Gemini) + tabbed TUI + OAuth refresh + atomic cache. This is the immediate upstream of Torven.
+
+**Torven (v0.5.0-dev onwards)** pivots the codebase to native macOS with SwiftUI, preserves the Rust core via UniFFI, and adds AI-powered Insights (eval pipeline + structured outputs), multi-account/multi-project tracking, and SQLite history persistence. macOS-only; the Waybar/Linux path is retired.
+
+The OpenAI and Anthropic OAuth endpoint references came from [`claudebar`](https://github.com/mryll/claudebar) and [`codexbar`](https://github.com/mryll/codexbar), both by mryll.
 
 ## License
 
-MIT.
+MIT — see [`LICENSE`](LICENSE). Dual copyright covers AkitaOnRails (original ai-usagebar) and Lorenzo Matheus (Torven pivot).

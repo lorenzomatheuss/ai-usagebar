@@ -1,8 +1,8 @@
-# ai-usagebar configuration. Lives at ~/.config/ai-usagebar/config.toml.
+# torven configuration. Lives at ~/.config/torven/config.toml.
 # Every section and field is optional — missing config = defaults below.
 #
 # IMPORTANT: if you put an inline `api_key` in any section, chmod 600 the
-# file (`chmod 600 ~/.config/ai-usagebar/config.toml`). Otherwise env vars
+# file (`chmod 600 ~/.config/torven/config.toml`). Otherwise env vars
 # are the safer choice.
 
 [ui]

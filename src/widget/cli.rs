@@ -3,13 +3,13 @@
 //!
 //! Mirrors claudebar:54-93. The defaults are identical so existing waybar
 //! configs that invoke `claudebar ...` can be retargeted to
-//! `ai-usagebar --vendor anthropic ...` without changing any flags.
+//! `torven --vendor anthropic ...` without changing any flags.
 
 use clap::{Parser, ValueEnum};
 
 #[derive(Parser, Debug, Clone)]
 #[command(
-    name = "ai-usagebar",
+    name = "torven",
     about = "Waybar widget for AI plan usage (Anthropic / OpenAI / Z.AI / OpenRouter)",
     long_about = "\
 Drop-in replacement for `claudebar` with multi-vendor support.
@@ -17,7 +17,7 @@ Drop-in replacement for `claudebar` with multi-vendor support.
 Output modes:
   - Default: Waybar JSON ({text, tooltip, class}). Used when stdout is piped.
   - --pretty: human-readable terminal output for local testing. Auto-enabled
-    when stdout is a TTY, so just running `ai-usagebar --vendor anthropic`
+    when stdout is a TTY, so just running `torven --vendor anthropic`
     in a terminal Does The Right Thing.
   - --watch N: like --pretty but refreshes every N seconds, clearing the screen
     between ticks. Useful while iterating on `--format` or `--tooltip-format`.
@@ -25,7 +25,7 @@ Output modes:
 )]
 pub struct Cli {
     /// Which vendor to query. When omitted, reads `[ui] primary` from
-    /// `~/.config/ai-usagebar/config.toml`; falls back to `anthropic` if
+    /// `~/.config/torven/config.toml`; falls back to `anthropic` if
     /// neither is set.
     #[arg(long, value_enum)]
     pub vendor: Option<Vendor>,
@@ -130,7 +130,7 @@ impl Vendor {
 impl Cli {
     /// Resolve the vendor with full precedence:
     ///   1. explicit `--vendor` (highest)
-    ///   2. persisted scroll-cycle state (`~/.cache/ai-usagebar/active_vendor`)
+    ///   2. persisted scroll-cycle state (`~/.cache/torven/active_vendor`)
     ///   3. `[ui] primary` from config
     ///   4. anthropic (lowest)
     pub fn resolved_vendor(&self, config: &crate::config::Config) -> Vendor {
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn defaults_match_claudebar() {
-        let cli = Cli::parse_from(["ai-usagebar"]);
+        let cli = Cli::parse_from(["torven"]);
         assert_eq!(cli.vendor, None);
         // Without explicit --vendor and with default config, resolve to anthropic.
         let cfg = crate::config::Config::default();
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn primary_from_config_wins_when_vendor_unset() {
-        let cli = Cli::parse_from(["ai-usagebar"]);
+        let cli = Cli::parse_from(["torven"]);
         let mut cfg = crate::config::Config::default();
         cfg.ui.primary = Some(crate::vendor::VendorId::Openrouter);
         assert_eq!(cli.resolved_vendor(&cfg), Vendor::Openrouter);
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn explicit_vendor_overrides_config_primary() {
-        let cli = Cli::parse_from(["ai-usagebar", "--vendor", "zai"]);
+        let cli = Cli::parse_from(["torven", "--vendor", "zai"]);
         let mut cfg = crate::config::Config::default();
         cfg.ui.primary = Some(crate::vendor::VendorId::Openrouter);
         assert_eq!(cli.resolved_vendor(&cfg), Vendor::Zai);
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn claudebar_compatible_flag_surface() {
         let cli = Cli::parse_from([
-            "ai-usagebar",
+            "torven",
             "--icon",
             "󰚩",
             "--format",
@@ -255,13 +255,13 @@ mod tests {
 
     #[test]
     fn pretty_and_json_conflict() {
-        let res = Cli::try_parse_from(["ai-usagebar", "--pretty", "--json"]);
+        let res = Cli::try_parse_from(["torven", "--pretty", "--json"]);
         assert!(res.is_err());
     }
 
     #[test]
     fn watch_disables_json_output() {
-        let cli = Cli::parse_from(["ai-usagebar", "--watch", "5"]);
+        let cli = Cli::parse_from(["torven", "--watch", "5"]);
         assert_eq!(cli.watch, Some(5));
         assert!(!cli.output_json());
     }

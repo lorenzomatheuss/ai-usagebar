@@ -10,10 +10,10 @@
 use std::io;
 use std::time::Duration;
 
-use ai_usagebar::config::Config;
-use ai_usagebar::tui::app::{App, REFRESH_INTERVAL, TabState, refresh_one};
-use ai_usagebar::tui::view::draw;
-use ai_usagebar::vendor::{HTTP_CLIENT_TIMEOUT, VendorId};
+use torven::config::Config;
+use torven::tui::app::{App, REFRESH_INTERVAL, TabState, refresh_one};
+use torven::tui::view::draw;
+use torven::vendor::{HTTP_CLIENT_TIMEOUT, VendorId};
 use chrono::Utc;
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
@@ -30,7 +30,7 @@ use tokio::sync::mpsc;
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     if let Err(e) = run().await {
-        eprintln!("ai-usagebar-tui: {e}");
+        eprintln!("torven-tui: {e}");
         std::process::exit(1);
     }
 }
@@ -39,7 +39,7 @@ async fn run() -> io::Result<()> {
     let mut config = Config::load().unwrap_or_default();
     let vendors = config.enabled_vendors();
     if vendors.is_empty() {
-        eprintln!("No vendors are enabled in ~/.config/ai-usagebar/config.toml. Exiting.");
+        eprintln!("No vendors are enabled in ~/.config/torven/config.toml. Exiting.");
         return Ok(());
     }
 
@@ -105,7 +105,7 @@ async fn event_loop<B: ratatui::backend::Backend>(
                     if let Ok(Event::Key(k)) = event::read() {
                         // Settings overlay consumes all keys when open.
                         if let Some(s) = app.settings.as_mut() {
-                            use ai_usagebar::tui::settings::{Action as SAction, handle_key as shandle};
+                            use torven::tui::settings::{Action as SAction, handle_key as shandle};
                             match shandle(s, k.code, k.modifiers) {
                                 SAction::Continue => {}
                                 SAction::Close => app.settings = None,
@@ -114,7 +114,7 @@ async fn event_loop<B: ratatui::backend::Backend>(
                                     // Re-load config so the new primary takes effect
                                     // on the next render, and queue an immediate refresh
                                     // of all vendors so newly-set API keys are picked up.
-                                    *config = ai_usagebar::config::Config::load().unwrap_or_default();
+                                    *config = torven::config::Config::load().unwrap_or_default();
                                     app.select_primary(config.ui.primary);
                                     spawn_all(app, client, config, &tx);
                                 }
@@ -123,9 +123,9 @@ async fn event_loop<B: ratatui::backend::Backend>(
                         }
                         // Normal key handling (settings closed).
                         if matches!(k.code, KeyCode::Char('s')) {
-                            let cfg = ai_usagebar::config::Config::load().unwrap_or_default();
+                            let cfg = torven::config::Config::load().unwrap_or_default();
                             app.settings = Some(
-                                ai_usagebar::tui::settings::SettingsState::from_config(&cfg),
+                                torven::tui::settings::SettingsState::from_config(&cfg),
                             );
                             continue;
                         }

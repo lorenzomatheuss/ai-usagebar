@@ -1,15 +1,33 @@
 # Changelog
 
-All notable changes to **ai-usagebar** are recorded here. The format is based on
+All notable changes to **torven** are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Each release is also published at
-<https://github.com/akitaonrails/ai-usagebar/releases>.
+<https://github.com/lorenzomatheuss/torven/releases>.
+
+> **Lineage:** Torven is the macOS-native successor to
+> [`ai-usagebar`](https://github.com/akitaonrails/ai-usagebar) by AkitaOnRails,
+> itself a Rust port of [`claudebar`](https://github.com/mryll/claudebar)
+> by mryll. Versions ≤ 0.4.0 trace directly to `ai-usagebar` (Waybar widget +
+> ratatui TUI). v0.5.0-dev forward is the macOS pivot (SwiftUI + Rust core
+> via UniFFI). See [Acknowledgements](README.md#acknowledgements).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- macOS Apple Silicon release builds via GitHub Actions, published as
+  `torven-macos-aarch64.tar.gz`.
+- README instructions for running the CLI and standalone TUI on macOS ARM.
+
+### Changed
+
+- Release notes now use the current fork's `GITHUB_REPOSITORY` when generating
+  manual install URLs.
+- `make install` now uses portable `install -d` / `install -m` commands so it
+  works on both GNU/Linux and macOS.
 
 ## [0.4.0] — 2026-05-24
 
@@ -43,10 +61,10 @@ Nothing yet.
   tarballs via [`cross`](https://github.com/cross-rs/cross). Tests
   still run only on the native x86_64 target (aarch64 binaries can't
   execute on the x86 runner).
-- **`ai-usagebar-bin` PKGBUILD now multi-arch** with per-arch
+- **`torven-bin` PKGBUILD now multi-arch** with per-arch
   `source_x86_64=` / `source_aarch64=` declarations. Arch users on
   Asahi / RPi5 / Ampere / etc. can install the prebuilt binary the
-  same way as x86_64 users: `yay -S ai-usagebar-bin`.
+  same way as x86_64 users: `yay -S torven-bin`.
 
 ## [0.3.2] — 2026-05-23
 
@@ -66,7 +84,7 @@ Nothing yet.
   deprecation warnings ahead of GitHub forcing Node 24 in June 2026.
 - **README**: dropped the "future release" caveat on the manual
   `pkill -SIGRTMIN+13 waybar` workaround (it's now automatic).
-- **README**: clarified that `ai-usagebar-tui` is a fully standalone
+- **README**: clarified that `torven-tui` is a fully standalone
   TUI requiring no Waybar / Hyprland / compositor dependencies — use
   it from any terminal, including plain SSH sessions.
 - **README**: corrected the Hyprland floating-window snippet to use
@@ -92,10 +110,10 @@ Nothing yet.
 ### Fixed
 
 - **AUR `-debug` collision** —
-  `ai-usagebar-bin` now sets `options=('!strip' '!debug')`, suppressing
+  `torven-bin` now sets `options=('!strip' '!debug')`, suppressing
   the auto-generated debug-info split. Without it the `-bin` variant's
-  auto-debug pkg fought over `/usr/lib/debug/usr/bin/ai-usagebar*.debug`
-  with an existing source-variant `ai-usagebar-debug`, preventing
+  auto-debug pkg fought over `/usr/lib/debug/usr/bin/torven*.debug`
+  with an existing source-variant `torven-debug`, preventing
   swapping from source to bin without first manually removing the
   orphan. The source PKGBUILD also adds `'!debug'` for symmetry, and
   both PKGBUILDs now declare the cross-variant `conflicts` so pacman
@@ -133,7 +151,7 @@ Nothing yet.
   shell. Resolution order: `api_key_env` → `api_key` → error with a
   clear message naming both fallbacks.
 - **Scroll-to-cycle on the bar**: new `--cycle-next` / `--cycle-prev`
-  flags persist the active vendor to `~/.cache/ai-usagebar/active_vendor`
+  flags persist the active vendor to `~/.cache/torven/active_vendor`
   and signal waybar (`SIGRTMIN+13`) to refresh instantly. Wire to
   `on-scroll-up` / `on-scroll-down` for a single bar item that cycles
   through enabled vendors.
@@ -172,7 +190,7 @@ Initial release. Drop-in replacement for
 vendors. Highlights:
 
 - Per-vendor Waybar widget producing the same JSON shape as claudebar.
-- Tabbed TUI (`ai-usagebar-tui`) with one tab per enabled vendor.
+- Tabbed TUI (`torven-tui`) with one tab per enabled vendor.
 - Vendors supported:
   - **Anthropic**: OAuth via `~/.claude/.credentials.json`,
     `GET api.anthropic.com/api/oauth/usage`.
@@ -194,11 +212,11 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.4.0
-[0.3.3]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.3.3
-[0.3.2]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.3.2
-[0.3.1]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.3.1
-[0.3.0]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.3.0
-[0.2.0]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.2.0
-[0.1.0]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.1.0
+[Unreleased]: https://github.com/lorenzomatheuss/torven/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lorenzomatheuss/torven/releases/tag/v0.4.0
+[0.3.3]: https://github.com/lorenzomatheuss/torven/releases/tag/v0.3.3
+[0.3.2]: https://github.com/lorenzomatheuss/torven/releases/tag/v0.3.2
+[0.3.1]: https://github.com/lorenzomatheuss/torven/releases/tag/v0.3.1
+[0.3.0]: https://github.com/lorenzomatheuss/torven/releases/tag/v0.3.0
+[0.2.0]: https://github.com/lorenzomatheuss/torven/releases/tag/v0.2.0
+[0.1.0]: https://github.com/lorenzomatheuss/torven/releases/tag/v0.1.0

@@ -2,7 +2,7 @@
 //! wrapper, and the local-testing renderers (`--pretty`, `--watch`, `--json`).
 //!
 //! The library exposes building blocks here; the actual `main` lives in
-//! `src/bin/ai-usagebar.rs`, which is a thin orchestration layer.
+//! `src/bin/torven.rs`, which is a thin orchestration layer.
 
 pub mod cli;
 pub mod pretty;

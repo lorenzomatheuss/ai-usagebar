@@ -221,6 +221,19 @@ mod tests {
     }
 
     #[test]
+    fn missing_file_returns_actionable_credentials_error() {
+        let path = std::env::temp_dir().join("torven-missing-claude-creds.json");
+        let err = read_from(&path).unwrap_err();
+        match err {
+            AppError::Credentials(msg) => {
+                assert!(msg.contains("Claude OAuth credentials not found"));
+                assert!(msg.contains("credentials_path"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
     fn write_back_round_trips_and_preserves_unknown_fields() {
         let f = write_creds(
             r#"{"claudeAiOauth":{

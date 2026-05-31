@@ -186,7 +186,7 @@ pub fn handle_key(state: &mut SettingsState, code: KeyCode, mods: KeyModifiers) 
     if matches!(code, KeyCode::Char('s')) && mods.contains(KeyModifiers::CONTROL) {
         return match save_to_config_default(state) {
             Ok(()) => {
-                state.status = "saved to ~/.config/ai-usagebar/config.toml (chmod 600)".into();
+                state.status = "saved to ~/.config/torven/config.toml (chmod 600)".into();
                 Action::SavedAndClose
             }
             Err(e) => {
@@ -236,7 +236,7 @@ pub fn handle_key(state: &mut SettingsState, code: KeyCode, mods: KeyModifiers) 
                 return match save_to_config_default(state) {
                     Ok(()) => {
                         state.status =
-                            "saved to ~/.config/ai-usagebar/config.toml (chmod 600)".into();
+                            "saved to ~/.config/torven/config.toml (chmod 600)".into();
                         Action::SavedAndClose
                     }
                     Err(e) => {
@@ -276,7 +276,7 @@ fn handle_input(input: &mut KeyInput, code: KeyCode) {
     }
 }
 
-/// Save to `~/.config/ai-usagebar/config.toml` (or create it). On success,
+/// Save to `~/.config/torven/config.toml` (or create it). On success,
 /// signal a running Waybar process (SIGRTMIN+13) so any module configured
 /// with `signal: 13` refreshes its exec output immediately — otherwise the
 /// bar text wouldn't reflect a new primary vendor until the next interval
@@ -355,7 +355,7 @@ fn set_string(doc: &mut DocumentMut, section: &str, key: &str, new_value: &str) 
 }
 
 fn default_config_path() -> Result<PathBuf> {
-    directories::ProjectDirs::from("", "", "ai-usagebar")
+    directories::ProjectDirs::from("", "", "torven")
         .map(|p| p.config_dir().join("config.toml"))
         .ok_or_else(|| AppError::Other("could not resolve config dir".into()))
 }
