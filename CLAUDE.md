@@ -34,12 +34,14 @@ When cutting a new version (patch, minor, or major):
    ```
    cd packaging/aur
    # Source:
-   curl -sLO https://github.com/akitaonrails/ai-usagebar/archive/refs/tags/vX.Y.Z.tar.gz
+   curl -sLO https://github.com/lorenzomatheuss/ai-usagebar/archive/refs/tags/vX.Y.Z.tar.gz
    sha256sum vX.Y.Z.tar.gz   # paste into PKGBUILD
    # Bin x86_64:
-   curl -sL https://github.com/akitaonrails/ai-usagebar/releases/download/vX.Y.Z/ai-usagebar-linux-x86_64.tar.gz.sha256
+   curl -sL https://github.com/lorenzomatheuss/ai-usagebar/releases/download/vX.Y.Z/ai-usagebar-linux-x86_64.tar.gz.sha256
    # Bin aarch64:
-   curl -sL https://github.com/akitaonrails/ai-usagebar/releases/download/vX.Y.Z/ai-usagebar-linux-aarch64.tar.gz.sha256
+   curl -sL https://github.com/lorenzomatheuss/ai-usagebar/releases/download/vX.Y.Z/ai-usagebar-linux-aarch64.tar.gz.sha256
+   # macOS ARM64:
+   curl -sL https://github.com/lorenzomatheuss/ai-usagebar/releases/download/vX.Y.Z/ai-usagebar-macos-aarch64.tar.gz.sha256
    ```
 9. **Regenerate `.SRCINFO`s**:
    ```

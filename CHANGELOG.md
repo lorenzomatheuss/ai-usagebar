@@ -5,11 +5,22 @@ All notable changes to **ai-usagebar** are recorded here. The format is based on
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Each release is also published at
-<https://github.com/akitaonrails/ai-usagebar/releases>.
+<https://github.com/lorenzomatheuss/ai-usagebar/releases>.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- macOS Apple Silicon release builds via GitHub Actions, published as
+  `ai-usagebar-macos-aarch64.tar.gz`.
+- README instructions for running the CLI and standalone TUI on macOS ARM.
+
+### Changed
+
+- Release notes now use the current fork's `GITHUB_REPOSITORY` when generating
+  manual install URLs.
+- `make install` now uses portable `install -d` / `install -m` commands so it
+  works on both GNU/Linux and macOS.
 
 ## [0.4.0] — 2026-05-24
 
@@ -194,11 +205,11 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.4.0
-[0.3.3]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.3.3
-[0.3.2]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.3.2
-[0.3.1]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.3.1
-[0.3.0]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.3.0
-[0.2.0]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.2.0
-[0.1.0]: https://github.com/akitaonrails/ai-usagebar/releases/tag/v0.1.0
+[Unreleased]: https://github.com/lorenzomatheuss/ai-usagebar/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lorenzomatheuss/ai-usagebar/releases/tag/v0.4.0
+[0.3.3]: https://github.com/lorenzomatheuss/ai-usagebar/releases/tag/v0.3.3
+[0.3.2]: https://github.com/lorenzomatheuss/ai-usagebar/releases/tag/v0.3.2
+[0.3.1]: https://github.com/lorenzomatheuss/ai-usagebar/releases/tag/v0.3.1
+[0.3.0]: https://github.com/lorenzomatheuss/ai-usagebar/releases/tag/v0.3.0
+[0.2.0]: https://github.com/lorenzomatheuss/ai-usagebar/releases/tag/v0.2.0
+[0.1.0]: https://github.com/lorenzomatheuss/ai-usagebar/releases/tag/v0.1.0

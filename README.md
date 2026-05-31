@@ -2,7 +2,7 @@
 
 Waybar widget and tabbed TUI for AI plan usage across **Anthropic Claude**, **OpenAI Codex/ChatGPT**, **Z.AI (GLM)**, and **OpenRouter**.
 
-This started as a Rust port of [`claudebar`](https://github.com/mryll/claudebar) and stays drop-in compatible with it. It keeps the minimalist Pango-bordered tooltip, Omarchy theme auto-detection, and flock-protected OAuth refresh, then adds three more vendors and a proper testable codebase instead of one long shell script.
+This started as a Rust port of [`claudebar`](https://github.com/mryll/claudebar) and stays drop-in compatible with it. It keeps the minimalist Pango-bordered tooltip, Omarchy theme auto-detection, and flock-protected OAuth refresh, then adds four more vendors and a proper testable codebase instead of one long shell script.
 
 ![Waybar widget showing `cld 29% · 1h 12m` in the top-right, with the hover tooltip showing Claude Max 20x session/weekly/sonnet/extra-usage progress bars](screenshot.png)
 
@@ -32,9 +32,32 @@ yay -S ai-usagebar        # compiles from source (~30-60s, hermetic)
 
 The `-bin` variant downloads the same x86_64 ELF that CI built and tested. The source variant compiles locally with your toolchain. Both install identical binaries to `/usr/bin/`. If you already have one installed, switch with `yay -S` the other package; pacman handles the swap through `conflicts`/`provides`.
 
+### macOS Apple Silicon
+
+Use the macOS ARM64 release tarball when available:
+
+```bash
+mkdir -p ~/.local/bin
+curl -fsSL https://github.com/lorenzomatheuss/ai-usagebar/releases/latest/download/ai-usagebar-macos-aarch64.tar.gz \
+  | tar xz -C ~/.local/bin ai-usagebar ai-usagebar-tui
+```
+
+Make sure `~/.local/bin` is in your `PATH`, then run:
+
+```bash
+ai-usagebar --vendor openai
+ai-usagebar-tui
+```
+
+On macOS, the CLI and TUI are the supported interfaces. Waybar and Hyprland
+configuration are Linux desktop integration paths.
+
 ### From source
 
 ```bash
+# macOS: install Rust first if needed:
+# brew install rust
+
 cargo build --release
 sudo make install                  # → /usr/local/bin
 # or
@@ -49,6 +72,7 @@ Each vendor authenticates a little differently. Anthropic and OpenAI use OAuth c
 |---|---|---|
 | Anthropic | OAuth, read from `~/.claude/.credentials.json` | Run `claude` once to log in. Token auto-refreshes. |
 | OpenAI | OAuth, read from `~/.codex/auth.json` | Run `codex login` once. Token auto-refreshes. |
+| Gemini | OAuth, read from `~/.gemini/oauth_creds.json` | Run `gemini` once to log in. Token auto-refreshes. |
 | Z.AI | API key (`ZAI_API_KEY` env or `[zai] api_key` in config) | Set either. |
 | OpenRouter | API key (`OPENROUTER_API_KEY` env or `[openrouter] api_key` in config) | Set either. |
 
@@ -64,17 +88,17 @@ For each API-key vendor, ai-usagebar checks in this order:
 
 - If you put inline `api_key` values in config, `chmod 600 ~/.config/ai-usagebar/config.toml`. The default behavior reads only env vars, which is safer when your config might be world-readable.
 - Don't commit your config dir if you check it into dotfiles unless you've redacted `api_key` lines.
-- OAuth credential files (`~/.claude/.credentials.json`, `~/.codex/auth.json`) are managed by their respective CLIs and already chmod-protected.
+- OAuth credential files (`~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`) are managed by their respective CLIs and already chmod-protected. Claude Desktop's `buddy-tokens.json` is only a local token counter and cannot authenticate Anthropic's usage API.
 
 ## Configuration
 
-`~/.config/ai-usagebar/config.toml` (optional — defaults enable all four vendors). Full example:
+`~/.config/ai-usagebar/config.toml` (optional — defaults enable all vendors). Full example:
 
 ```toml
 [ui]
 # Which vendor the widget shows when --vendor is omitted, AND which tab
 # is selected when the TUI opens. Defaults to anthropic when not set.
-# primary = "anthropic"   # anthropic | openai | zai | openrouter
+# primary = "anthropic"   # anthropic | openai | gemini | zai | openrouter
 
 [anthropic]
 enabled = true
@@ -83,6 +107,11 @@ enabled = true
 [openai]
 enabled = true
 # codex_auth_path = "/home/you/.codex/auth.json"
+
+[gemini]
+enabled = true
+# oauth_creds_path = "/home/you/.gemini/oauth_creds.json"
+# project = "my-gemini-project"   # optional override
 
 [zai]
 enabled = true
@@ -102,6 +131,7 @@ api_key_env = "OPENROUTER_API_KEY"
 # Local testing — auto-detects TTY and renders human-readable output.
 ai-usagebar                        # uses [ui] primary (defaults to anthropic)
 ai-usagebar --vendor openai
+ai-usagebar --vendor gemini
 ai-usagebar --vendor zai
 ai-usagebar --vendor openrouter
 
@@ -117,7 +147,7 @@ ai-usagebar-tui
 
 ## Standalone TUI — no Waybar required
 
-The two binaries are independent. If you don't run Waybar (or just want to check usage occasionally rather than have it on your bar permanently), `ai-usagebar-tui` works as a fully standalone terminal app:
+The two binaries are independent. If you don't run Waybar (or you are on macOS and just want to check usage occasionally), `ai-usagebar-tui` works as a fully standalone terminal app:
 
 ```bash
 ai-usagebar-tui                    # opens in your current terminal
@@ -129,7 +159,7 @@ It runs in any terminal emulator (Kitty, Alacritty, Foot, Ghostty, etc.), works 
 - A foreground monitor on a secondary screen or tmux pane while you code
 - A shell-only tool on remote machines (just install the binary; no Waybar/Hyprland dependencies)
 
-The Waybar widget is optional. The TUI is the best way to see all four vendors at once, even if you never set up the widget.
+The Waybar widget is optional. The TUI is the best way to see all vendors at once, even if you never set up the widget.
 
 ## Waybar config
 
@@ -152,7 +182,7 @@ Use one bar item and scroll through your vendors. The TUI on-click still shows t
 }
 ```
 
-The `{vendor_short}` placeholder always expands to a 3-letter vendor ID (`cld` / `gpt` / `zai` / `opr`), so the bar text tells you which vendor is active. The other usage placeholders (`{session_pct}` for Anthropic, `{oai_session_pct}` for OpenAI, etc.) are vendor-specific. If you want one format string for all four cycled vendors, prefer the generic placeholders where available. For now, `{session_pct}` works for Anthropic only; the other vendors expose their own `{oai_*}` / `{zai_*}` / `{or_*}` families, which expand to empty strings for vendors that don't define them.
+The `{vendor_short}` placeholder always expands to a 3-letter vendor ID (`cld` / `gpt` / `gem` / `zai` / `opr`), so the bar text tells you which vendor is active. If you want one format string for all cycled vendors, prefer generic placeholders where available. `{session_pct}`, `{session_reset}`, and `{plan}` work for Anthropic, OpenAI, and Gemini; the other vendors expose their own `{oai_*}` / `{gemini_*}` / `{zai_*}` / `{or_*}` families.
 
 `signal: 13` lets the scroll-cycle commands refresh the bar instantly (via `SIGRTMIN+13`) instead of waiting for the next 300s interval.
 
@@ -161,7 +191,7 @@ The `{vendor_short}` placeholder always expands to a 3-letter vendor ID (`cld` /
 If you'd rather see them all at once:
 
 ```jsonc
-"modules-right": ["custom/claude", "custom/openai", "custom/openrouter", "custom/zai"],
+"modules-right": ["custom/claude", "custom/openai", "custom/gemini", "custom/openrouter", "custom/zai"],
 
 "custom/claude": {
     "exec": "ai-usagebar --vendor anthropic --icon '󰚩'",
@@ -172,6 +202,12 @@ If you'd rather see them all at once:
 },
 "custom/openai": {
     "exec": "ai-usagebar --vendor openai --icon '󱢆'",
+    "return-type": "json",
+    "interval": 300,
+    "tooltip": true
+},
+"custom/gemini": {
+    "exec": "ai-usagebar --vendor gemini --icon '󰚩'",
     "return-type": "json",
     "interval": 300,
     "tooltip": true
@@ -217,12 +253,13 @@ Then `hyprctl reload` (no logout needed).
 |---|---|---|
 | **Anthropic** | `api.anthropic.com/api/oauth/usage` (undocumented) | Session (5h), Weekly (7d), Sonnet (7d), Extra usage $ |
 | **OpenAI** | `chatgpt.com/backend-api/wham/usage` (undocumented; used by official `codex` CLI) | Codex 5h, Codex weekly, Code-review weekly, Credits |
+| **Gemini** | `cloudcode-pa.googleapis.com/v1internal:{loadCodeAssist,retrieveUserQuota}` (undocumented; used by official `gemini` CLI) | Gemini Code Assist quota buckets by model, reset time, project |
 | **Z.AI** | `api.z.ai/api/monitor/usage/quota/limit` (undocumented) | Session 5h, Weekly 7d, MCP tools monthly |
 | **OpenRouter** | `openrouter.ai/api/v1/{credits,key}` (documented) | Balance, today/week/month spend, free vs paid tier |
 
 ### Endpoint stability
 
-Three of the four endpoints are undocumented. The Anthropic and OpenAI endpoints are used by their official CLIs (`claude` and `codex`), so removing them would break those tools too. That makes them less shaky than scraped web endpoints. Z.AI's monitor endpoint is reverse-engineered from a third-party plugin; treat it as the most fragile one.
+Four of the five endpoint families are undocumented. The Anthropic, OpenAI, and Gemini endpoints are used by their official CLIs (`claude`, `codex`, and `gemini`), so removing them would break those tools too. That makes them less shaky than scraped web endpoints. Z.AI's monitor endpoint is reverse-engineered from a third-party plugin; treat it as the most fragile one.
 
 When an endpoint drifts, **run `make smoke`**. The live API tests check the exact fields this project depends on and produce a precise failure pointing at what changed. Paste the failure back into Claude Code and the affected `types.rs` can usually be updated mechanically.
 
@@ -242,6 +279,10 @@ When an endpoint drifts, **run `make smoke`**. The live API tests check the exac
 ### OpenAI (Codex OAuth)
 
 `{oai_plan}`, `{oai_session_pct}`, `{oai_session_reset}`, `{oai_session_elapsed}`, `{oai_session_pace}`, `{oai_session_pace_indicator}`, `{oai_weekly_*}` (same family), `{oai_code_review_pct}`, `{oai_credit_balance}`, `{oai_local_msgs}`, `{oai_cloud_msgs}`
+
+### Gemini
+
+`{gemini_plan}`, `{gemini_project}`, `{gemini_worst_pct}`, `{gemini_worst_remaining}`, `{gemini_worst_model}`, `{gemini_worst_reset}`. The shared `{session_pct}`, `{session_reset}`, and `{plan}` aliases map to the worst Gemini quota bucket for simple cross-vendor formats.
 
 ### Z.AI
 
@@ -309,7 +350,7 @@ If your module doesn't use `signal: 13`, the signal is a no-op and the bar will 
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for the release history. Each release also has its own page at <https://github.com/akitaonrails/ai-usagebar/releases> with the auto-generated install snippet and checksum.
+See [CHANGELOG.md](CHANGELOG.md) for the release history. Each release also has its own page at <https://github.com/lorenzomatheuss/ai-usagebar/releases> with the auto-generated install snippet and checksum.
 
 ## Acknowledgements
 

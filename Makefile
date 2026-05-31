@@ -6,11 +6,15 @@ build:
 	cargo build --release
 
 install: build
-	install -Dm755 target/release/ai-usagebar     $(DESTDIR)$(PREFIX)/bin/ai-usagebar
-	install -Dm755 target/release/ai-usagebar-tui $(DESTDIR)$(PREFIX)/bin/ai-usagebar-tui
-	install -Dm644 config.example.toml            $(DESTDIR)$(PREFIX)/share/ai-usagebar/config.example.toml
-	install -Dm644 README.md                      $(DESTDIR)$(PREFIX)/share/doc/ai-usagebar/README.md
-	install -Dm644 LICENSE                        $(DESTDIR)$(PREFIX)/share/licenses/ai-usagebar/LICENSE
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -d $(DESTDIR)$(PREFIX)/share/ai-usagebar
+	install -d $(DESTDIR)$(PREFIX)/share/doc/ai-usagebar
+	install -d $(DESTDIR)$(PREFIX)/share/licenses/ai-usagebar
+	install -m755 target/release/ai-usagebar     $(DESTDIR)$(PREFIX)/bin/ai-usagebar
+	install -m755 target/release/ai-usagebar-tui $(DESTDIR)$(PREFIX)/bin/ai-usagebar-tui
+	install -m644 config.example.toml            $(DESTDIR)$(PREFIX)/share/ai-usagebar/config.example.toml
+	install -m644 README.md                      $(DESTDIR)$(PREFIX)/share/doc/ai-usagebar/README.md
+	install -m644 LICENSE                        $(DESTDIR)$(PREFIX)/share/licenses/ai-usagebar/LICENSE
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/ai-usagebar

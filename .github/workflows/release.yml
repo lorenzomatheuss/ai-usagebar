@@ -21,11 +21,23 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             artifact: ai-usagebar-linux-x86_64
             builder: cargo
+            os: ubuntu-22.04
+            test: true
+            needs_nasm: true
           - target: aarch64-unknown-linux-gnu
             artifact: ai-usagebar-linux-aarch64
             builder: cross
+            os: ubuntu-22.04
+            test: false
+            needs_nasm: false
+          - target: aarch64-apple-darwin
+            artifact: ai-usagebar-macos-aarch64
+            builder: cargo
+            os: macos-14
+            test: true
+            needs_nasm: false
 
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v5
@@ -41,7 +53,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Install nasm (x86_64 native build; ring assembles its primitives)
-        if: matrix.builder == 'cargo'
+        if: matrix.needs_nasm
         run: sudo apt-get update && sudo apt-get install -y nasm
 
       - name: Install cross (aarch64 cross-compile via Docker)
@@ -50,8 +62,8 @@ jobs:
         with:
           tool: cross
 
-      - name: Test (native only — aarch64 binaries can't run on x86 runner)
-        if: matrix.builder == 'cargo'
+      - name: Test native release build
+        if: matrix.test
         run: cargo test --release --target ${{ matrix.target }}
 
       - name: Build release binaries
@@ -69,7 +81,11 @@ jobs:
 
       - name: Compute SHA256
         run: |
-          SHA=$(sha256sum ${{ matrix.artifact }}.tar.gz | awk '{print $1}')
+          if command -v sha256sum >/dev/null 2>&1; then
+            SHA=$(sha256sum ${{ matrix.artifact }}.tar.gz | awk '{print $1}')
+          else
+            SHA=$(shasum -a 256 ${{ matrix.artifact }}.tar.gz | awk '{print $1}')
+          fi
           echo "$SHA  ${{ matrix.artifact }}.tar.gz" > ${{ matrix.artifact }}.tar.gz.sha256
           echo "Built ${{ matrix.artifact }}.tar.gz sha256=$SHA"
 
@@ -106,7 +122,11 @@ jobs:
             echo "### Manual"
             echo
             echo '```bash'
-            echo "curl -fsSL https://github.com/akitaonrails/ai-usagebar/releases/download/${TAG}/ai-usagebar-linux-x86_64.tar.gz | tar xz -C ~/.local/bin ai-usagebar ai-usagebar-tui"
+            echo "mkdir -p ~/.local/bin"
+            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ai-usagebar-linux-x86_64.tar.gz | tar xz -C ~/.local/bin ai-usagebar ai-usagebar-tui"
+            echo
+            echo "# macOS Apple Silicon"
+            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ai-usagebar-macos-aarch64.tar.gz | tar xz -C ~/.local/bin ai-usagebar ai-usagebar-tui"
             echo '```'
             echo
             echo "## Checksums (SHA256)"
