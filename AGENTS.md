@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Rust 2024 crate for a Waybar widget and terminal TUI. Source lives in `src/`, with library entry points in `src/lib.rs` and binaries in `src/bin/ai-usagebar.rs` and `src/bin/ai-usagebar-tui.rs`. Provider code is grouped under `src/anthropic/`, `src/openai/`, `src/openrouter/`, and `src/zai/`. Widget code is in `src/widget/`, TUI code in `src/tui/`, and shared formatting, tooltip, and cache behavior sits in top-level modules. Tests are in `tests/`, fixtures in `tests/fixtures/`, snapshots in `tests/snapshots/`, and AUR packaging in `packaging/aur/`.
+This is a Rust 2024 crate for a Waybar widget and terminal TUI. Source lives in `src/`, with library entry points in `src/lib.rs` and binaries in `src/bin/torven.rs` and `src/bin/torven-tui.rs`. Provider code is grouped under `src/anthropic/`, `src/openai/`, `src/openrouter/`, and `src/zai/`. Widget code is in `src/widget/`, TUI code in `src/tui/`, and shared formatting, tooltip, and cache behavior sits in top-level modules. Tests are in `tests/`, fixtures in `tests/fixtures/`, snapshots in `tests/snapshots/`, and AUR packaging in `packaging/aur/`.
 
 ## Build, Test, and Development Commands
 
@@ -12,8 +12,8 @@ This is a Rust 2024 crate for a Waybar widget and terminal TUI. Source lives in 
 - `make smoke` runs ignored live API tests and requires real credentials in the environment or local vendor auth files.
 - `make clippy` runs `cargo clippy --all-targets -- -D warnings`.
 - `make fmt` runs `cargo fmt`.
-- `cargo run --bin ai-usagebar -- --json` tests widget JSON output.
-- `cargo run --bin ai-usagebar-tui` launches the TUI.
+- `cargo run --bin torven -- --json` tests widget JSON output.
+- `cargo run --bin torven-tui` launches the TUI.
 
 ## Coding Style & Naming Conventions
 

@@ -10,10 +10,10 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use ai_usagebar::anthropic::{self, fetch::Endpoints};
-use ai_usagebar::cache::Cache;
-use ai_usagebar::theme::Theme;
-use ai_usagebar::widget::render::{DEFAULT_FORMAT, RenderInput, render_anthropic};
+use torven::anthropic::{self, fetch::Endpoints};
+use torven::cache::Cache;
+use torven::theme::Theme;
+use torven::widget::render::{DEFAULT_FORMAT, RenderInput, render_anthropic};
 use chrono::{TimeZone, Utc};
 use tempfile::{NamedTempFile, TempDir};
 

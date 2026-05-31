@@ -2,10 +2,10 @@
 //! locking.
 //!
 //! Mirrors claudebar's cache layout but per-vendor:
-//!   `~/.cache/ai-usagebar/<vendor>/usage.json`         payload
-//!   `~/.cache/ai-usagebar/<vendor>/.stale`             marker (cache is stale)
-//!   `~/.cache/ai-usagebar/<vendor>/.last_error`        HTTP code\nmessage
-//!   `~/.cache/ai-usagebar/<vendor>/.fetch.lock`        flock target
+//!   `~/.cache/torven/<vendor>/usage.json`         payload
+//!   `~/.cache/torven/<vendor>/.stale`             marker (cache is stale)
+//!   `~/.cache/torven/<vendor>/.last_error`        HTTP code\nmessage
+//!   `~/.cache/torven/<vendor>/.fetch.lock`        flock target
 //!
 //! Multi-monitor safety: callers should `acquire_lock()` before the refresh+
 //! fetch window, mirroring claudebar:402-407's `exec 9>"$_lockfile" / flock`.
@@ -35,10 +35,10 @@ pub struct Cache {
 }
 
 impl Cache {
-    /// Build a cache rooted at `~/.cache/ai-usagebar/<vendor>` (or under
+    /// Build a cache rooted at `~/.cache/torven/<vendor>` (or under
     /// `$XDG_CACHE_HOME` when set).
     pub fn for_vendor(vendor: &str) -> Result<Self> {
-        let base = xdg_cache_dir()?.join("ai-usagebar").join(vendor);
+        let base = xdg_cache_dir()?.join("torven").join(vendor);
         Ok(Self { dir: base })
     }
 

@@ -96,7 +96,7 @@ async fn build_output(cli: &Cli) -> Result<WaybarOutput> {
     let vendor = cli.resolved_vendor(&config);
     if !config.is_enabled(vendor.to_id()) {
         return Err(AppError::Other(format!(
-            "vendor {:?} is disabled in ~/.config/ai-usagebar/config.toml",
+            "vendor {:?} is disabled in ~/.config/torven/config.toml",
             vendor
         )));
     }
@@ -307,7 +307,7 @@ mod tests {
         // clap's Default isn't derived for us; build from parse_from with no
         // args to get the canonical defaults.
         use clap::Parser;
-        Cli::parse_from(["ai-usagebar"])
+        Cli::parse_from(["torven"])
     }
 
     fn dummy_outcome() -> FetchOutcome {

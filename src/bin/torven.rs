@@ -1,8 +1,8 @@
 //! Waybar widget binary. The library does all the work — this is just the
 //! tokio bootstrap + clap parse.
 
-use ai_usagebar::widget::cli::Cli;
-use ai_usagebar::widget::run::run;
+use torven::widget::cli::Cli;
+use torven::widget::run::run;
 use clap::Parser;
 
 fn main() {

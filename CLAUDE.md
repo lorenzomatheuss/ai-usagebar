@@ -34,14 +34,14 @@ When cutting a new version (patch, minor, or major):
    ```
    cd packaging/aur
    # Source:
-   curl -sLO https://github.com/lorenzomatheuss/ai-usagebar/archive/refs/tags/vX.Y.Z.tar.gz
+   curl -sLO https://github.com/lorenzomatheuss/torven/archive/refs/tags/vX.Y.Z.tar.gz
    sha256sum vX.Y.Z.tar.gz   # paste into PKGBUILD
    # Bin x86_64:
-   curl -sL https://github.com/lorenzomatheuss/ai-usagebar/releases/download/vX.Y.Z/ai-usagebar-linux-x86_64.tar.gz.sha256
+   curl -sL https://github.com/lorenzomatheuss/torven/releases/download/vX.Y.Z/torven-linux-x86_64.tar.gz.sha256
    # Bin aarch64:
-   curl -sL https://github.com/lorenzomatheuss/ai-usagebar/releases/download/vX.Y.Z/ai-usagebar-linux-aarch64.tar.gz.sha256
+   curl -sL https://github.com/lorenzomatheuss/torven/releases/download/vX.Y.Z/torven-linux-aarch64.tar.gz.sha256
    # macOS ARM64:
-   curl -sL https://github.com/lorenzomatheuss/ai-usagebar/releases/download/vX.Y.Z/ai-usagebar-macos-aarch64.tar.gz.sha256
+   curl -sL https://github.com/lorenzomatheuss/torven/releases/download/vX.Y.Z/torven-macos-aarch64.tar.gz.sha256
    ```
 9. **Regenerate `.SRCINFO`s**:
    ```
@@ -49,8 +49,8 @@ When cutting a new version (patch, minor, or major):
    # And from a scratch dir with the bin PKGBUILD: makepkg --printsrcinfo > .SRCINFO-bin
    ```
 10. **Push to both AUR repos** (separate git repos):
-    - `~/Projects/aur-ai-usagebar` → `ssh://aur@aur.archlinux.org/ai-usagebar.git`
-    - `~/Projects/aur-ai-usagebar-bin` → `ssh://aur@aur.archlinux.org/ai-usagebar-bin.git`
+    - `~/Projects/aur-torven` → `ssh://aur@aur.archlinux.org/torven.git`
+    - `~/Projects/aur-torven-bin` → `ssh://aur@aur.archlinux.org/torven-bin.git`
 
 **Anything skipping any of 1–10 is an incomplete release.** Tags are
 immutable; do **not** force-move a tag once it's pushed. Cut a new

@@ -19,19 +19,19 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            artifact: ai-usagebar-linux-x86_64
+            artifact: torven-linux-x86_64
             builder: cargo
             os: ubuntu-22.04
             test: true
             needs_nasm: true
           - target: aarch64-unknown-linux-gnu
-            artifact: ai-usagebar-linux-aarch64
+            artifact: torven-linux-aarch64
             builder: cross
             os: ubuntu-22.04
             test: false
             needs_nasm: false
           - target: aarch64-apple-darwin
-            artifact: ai-usagebar-macos-aarch64
+            artifact: torven-macos-aarch64
             builder: cargo
             os: macos-14
             test: true
@@ -72,8 +72,8 @@ jobs:
       - name: Create tarball (both bins + LICENSE + config example)
         run: |
           STAGE=$(mktemp -d)
-          cp target/${{ matrix.target }}/release/ai-usagebar \
-             target/${{ matrix.target }}/release/ai-usagebar-tui \
+          cp target/${{ matrix.target }}/release/torven \
+             target/${{ matrix.target }}/release/torven-tui \
              "$STAGE/"
           cp LICENSE README.md config.example.toml "$STAGE/"
           tar czf ${{ matrix.artifact }}.tar.gz -C "$STAGE" .
@@ -115,18 +115,18 @@ jobs:
             echo "### Arch (AUR)"
             echo
             echo '```bash'
-            echo "yay -S ai-usagebar-bin      # prebuilt binary from this release"
-            echo "yay -S ai-usagebar          # compiles from source"
+            echo "yay -S torven-bin      # prebuilt binary from this release"
+            echo "yay -S torven          # compiles from source"
             echo '```'
             echo
             echo "### Manual"
             echo
             echo '```bash'
             echo "mkdir -p ~/.local/bin"
-            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ai-usagebar-linux-x86_64.tar.gz | tar xz -C ~/.local/bin ai-usagebar ai-usagebar-tui"
+            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/torven-linux-x86_64.tar.gz | tar xz -C ~/.local/bin torven torven-tui"
             echo
             echo "# macOS Apple Silicon"
-            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ai-usagebar-macos-aarch64.tar.gz | tar xz -C ~/.local/bin ai-usagebar ai-usagebar-tui"
+            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/torven-macos-aarch64.tar.gz | tar xz -C ~/.local/bin torven torven-tui"
             echo '```'
             echo
             echo "## Checksums (SHA256)"

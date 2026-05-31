@@ -12,30 +12,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ai-usagebar"
-version = "0.4.0"
-dependencies = [
- "base64",
- "chrono",
- "clap",
- "crossterm",
- "directories",
- "fs2",
- "insta",
- "mockito",
- "pretty_assertions",
- "ratatui",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "toml_edit",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1830,6 +1806,30 @@ name = "toml_write"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
+
+[[package]]
+name = "torven"
+version = "0.5.0-dev"
+dependencies = [
+ "base64",
+ "chrono",
+ "clap",
+ "crossterm",
+ "directories",
+ "fs2",
+ "insta",
+ "mockito",
+ "pretty_assertions",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "toml_edit",
+]
 
 [[package]]
 name = "tower"

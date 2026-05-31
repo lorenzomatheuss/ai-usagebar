@@ -36,7 +36,6 @@ Toda a lógica de fetch, OAuth, types e cache é cross-platform. Não toca nada.
 | `src/openai/{mod,fetch,oauth,creds,types,vendor}.rs` | Fetcher Codex/ChatGPT — idem |
 | `src/openrouter/{mod,fetch,types,vendor}.rs` | OpenRouter API key-based |
 | `src/zai/{mod,fetch,types,vendor}.rs` | Z.AI GLM monitor |
-| `src/gemini/{mod,fetch,creds,types,vendor}.rs` | Gemini OAuth |
 
 ### Core compartilhado (6 arquivos, ~2k LOC)
 
@@ -53,8 +52,8 @@ Toda a lógica de fetch, OAuth, types e cache é cross-platform. Não toca nada.
 
 | Path | Razão |
 |---|---|
-| `src/tui/{mod,app,panels,settings,view}.rs` | Ratatui é cross-platform. **Decisão:** manter o binary `ai-usagebar-tui` como dev tool / fallback CLI. Custa ~0 manter, ganha "I can run this from the terminal" no pitch. |
-| `src/bin/ai-usagebar-tui.rs` | Entry point do TUI bin |
+| `src/tui/{mod,app,panels,settings,view}.rs` | Ratatui é cross-platform. **Decisão:** manter o binary `torven-tui` como dev tool / fallback CLI. Custa ~0 manter, ganha "I can run this from the terminal" no pitch. |
+| `src/bin/torven-tui.rs` | Entry point do TUI bin |
 
 ### Tests (mantém)
 
@@ -91,7 +90,7 @@ Camada de apresentação Linux. Some inteira.
 | `src/theme.rs` | Detecção do tema Omarchy — não existe em macOS; tema vem do macOS appearance (light/dark) |
 | `src/active.rs` | Estado da scroll-cycle do Waybar — sem scroll na status bar do mac |
 | `src/widget/{mod,cli,pretty,render,run}.rs` | Shell inteiro do widget Waybar |
-| `src/bin/ai-usagebar.rs` | Entry point do widget — substituído pelo binary Tauri |
+| `src/bin/torven.rs` | Entry point do widget — substituído pelo binary Tauri |
 
 ### Packaging Linux
 
@@ -108,7 +107,7 @@ Camada de apresentação Linux. Some inteira.
 
 | Path proposto | Função | Origem |
 |---|---|---|
-| `src/insights/` | **Feature diferenciadora.** Cliente da Anthropic Messages API que recebe snapshots históricos + contexto e gera análise tipo "seu uso de Claude pulou 3x na última semana, principalmente em sessões de 8-10pm; considere mover trabalho pesado para a janela de 5h pré-reset". Streaming de resposta. | Novo, depende de `~/.config/ai-usagebar/api_keys.toml` ou Tauri secure storage |
+| `src/insights/` | **Feature diferenciadora.** Cliente da Anthropic Messages API que recebe snapshots históricos + contexto e gera análise tipo "seu uso de Claude pulou 3x na última semana, principalmente em sessões de 8-10pm; considere mover trabalho pesado para a janela de 5h pré-reset". Streaming de resposta. | Novo, depende de `~/.config/torven/api_keys.toml` ou Tauri secure storage |
 | `src/history/` | Persistência local de snapshots ao longo do tempo (SQLite via `rusqlite` ou JSONL diário). Alimenta o `insights/` e a janela detalhada com gráficos. | Novo |
 | `src/menubar/` (opcional) | Bridge para texto dinâmico na NSStatusBar — pode viver dentro do Tauri ou expor via comando | Novo, possivelmente delegado ao plugin `tauri-plugin-positioner` ou `tray-icon` crate |
 
@@ -134,8 +133,8 @@ Camada de apresentação Linux. Some inteira.
 ```
 ANTES (Waybar-coupled)            DEPOIS (macOS native)
 ─────────────────────             ──────────────────────
-bin/ai-usagebar (Waybar)   ─▶     src-tauri/ (Tauri 2 app)
-bin/ai-usagebar-tui        ───    bin/ai-usagebar-tui (mantém)
+bin/torven (Waybar)   ─▶     src-tauri/ (Tauri 2 app)
+bin/torven-tui        ───    bin/torven-tui (mantém)
 src/widget/                 X     web/ (React + TS)
 src/waybar.rs               X     web/src/components/MenuBarLabel.tsx
 src/pango.rs / tooltip.rs   X     web/src/components/Popover.tsx
@@ -158,7 +157,7 @@ packaging/aur/              X     src-tauri/tauri.conf.json (bundle .app)
 
 Decisões abertas que o @architect precisa fechar:
 
-1. **Workspace Cargo:** monolítico (um crate só) ou multi-crate (`ai-usagebar-core` lib + `ai-usagebar-tauri` bin + `ai-usagebar-tui` bin)?
+1. **Workspace Cargo:** monolítico (um crate só) ou multi-crate (`torven-core` lib + `torven-tauri` bin + `torven-tui` bin)?
    - Recomendação: workspace com `core` lib + 2 bins. Limpa a separação entre o que é fetcher e o que é frontend.
 
 2. **History storage:** SQLite via `rusqlite` (mais robusto, query-friendly, +1 dep nativa) ou JSONL diário (zero-dep, append-only, harder to query)?
@@ -168,7 +167,7 @@ Decisões abertas que o @architect precisa fechar:
    - Recomendação: OAuth primeiro (zero friction), fallback para API key configurada.
 
 4. **TUI binary fate:** continuar empacotando no .app ou separar?
-   - Recomendação: separar. .app fica leve, TUI fica como `cargo install ai-usagebar-tui` para devs.
+   - Recomendação: separar. .app fica leve, TUI fica como `cargo install torven-tui` para devs.
 
 5. **Tauri commands vs events:** snapshots via command (request/response) ou event broadcast (push do core para UI quando refresh)?
    - Recomendação: híbrido. Initial load via command, atualizações via event (`vendor-snapshot-updated`).

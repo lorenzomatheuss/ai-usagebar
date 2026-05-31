@@ -64,7 +64,7 @@ fn draw_tabs(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" ai-usagebar ")
+        .title(" torven ")
         .border_style(Style::default().fg(accent(&app.theme)));
 
     let tabs = Tabs::new(titles)

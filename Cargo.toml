@@ -1,22 +1,22 @@
 [package]
-name = "ai-usagebar"
-version = "0.4.0"
+name = "torven"
+version = "0.5.0-dev"
 edition = "2024"
 rust-version = "1.86"
 license = "MIT"
-description = "Waybar widget + TUI for AI plan usage across Anthropic, OpenAI, Z.AI, and OpenRouter"
+description = "Local-first LLM observability for macOS — track usage across Anthropic, OpenAI, Z.AI, and OpenRouter with AI-powered insights"
 
 [lib]
-name = "ai_usagebar"
+name = "torven"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ai-usagebar"
-path = "src/bin/ai-usagebar.rs"
+name = "torven"
+path = "src/bin/torven.rs"
 
 [[bin]]
-name = "ai-usagebar-tui"
-path = "src/bin/ai-usagebar-tui.rs"
+name = "torven-tui"
+path = "src/bin/torven-tui.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "macros", "time", "fs", "process", "signal"] }
