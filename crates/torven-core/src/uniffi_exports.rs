@@ -151,7 +151,11 @@ mod tests {
     #[test]
     fn vendor_info_display_names_are_non_empty_utf8() {
         for v in get_vendor_list() {
-            assert!(!v.display_name.is_empty(), "vendor {} has empty display_name", v.id);
+            assert!(
+                !v.display_name.is_empty(),
+                "vendor {} has empty display_name",
+                v.id
+            );
             assert!(v.display_name.is_ascii() || !v.display_name.is_empty());
         }
     }
