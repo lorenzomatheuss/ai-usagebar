@@ -1,40 +1,101 @@
-# torven configuration. Lives at ~/.config/torven/config.toml.
-# Every section and field is optional — missing config = defaults below.
+# Torven configuration — full example with Story 1.6 multi-account schema.
+# Lives at ~/.config/torven/config.toml.
 #
-# IMPORTANT: if you put an inline `api_key` in any section, chmod 600 the
-# file (`chmod 600 ~/.config/torven/config.toml`). Otherwise env vars
-# are the safer choice.
+# IMPORTANT: every section and field is optional. A missing file uses the
+# defaults documented inline below. If you put an inline `api_key` anywhere
+# in this file, chmod 600 it (`chmod 600 ~/.config/torven/config.toml`) —
+# env vars and the macOS Keychain (Story 1.20+) are safer alternatives.
 
+# --- UI ---------------------------------------------------------------
 [ui]
-# Which vendor the widget shows when `--vendor` is omitted, AND which tab
-# is selected when the TUI opens. Comment out to default to Anthropic.
+# Which vendor the macOS menu bar shows when no `--vendor` flag is set, AND
+# which tab is initially selected in the TUI. Comment out to default to
+# Anthropic.
 # Valid: anthropic | openai | zai | openrouter
 # primary = "anthropic"
 
+# --- Display ----------------------------------------------------------
+[display]
+# How often the menu bar refreshes (seconds). Must be >= 10 — lower values
+# would hammer vendor APIs and trigger rate-limits.
+refresh_interval_secs = 30
+
+[display.thresholds]
+# Usage utilization thresholds for the menu-bar color (calm/amber/critical).
+# Both must be within [0.0, 1.0] and amber < critical.
+amber = 0.75
+critical = 0.95
+
+# --- History ----------------------------------------------------------
+[history]
+# How many days of usage history Torven retains in SQLite (Story 1.13+).
+retention_days = 90
+# Override the DB path (defaults to ~/Library/Application Support/torven/history.db).
+# db_path = "/path/to/history.db"
+
+# --- AI Insights (Story 1.15) -----------------------------------------
+[ai_insights]
+# Master switch — set to `true` to enable LLM-powered weekly insights.
+# Off by default until the worker ships (Story 1.15).
+enabled = false
+# Prompt template version. Bumps when the prompt schema changes.
+prompt_version = "v1"
+# Hard ceiling on LLM cost per invocation (USD). Must be >= 0.
+max_cost_usd = 0.05
+# Per-minute rate limit on insight requests.
+rate_limit_per_minute = 20
+
+# --- Anthropic (OAuth) ------------------------------------------------
 [anthropic]
 enabled = true
-# Path to the Claude CLI OAuth credentials. Leave commented out to use
-# the default ~/.claude/.credentials.json.
-# credentials_path = "/home/you/.claude/.credentials.json"
+# Override the Claude CLI OAuth credentials path. Leave commented for the
+# default ~/.claude/.credentials.json.
+# credentials_path = "/Users/you/.claude/.credentials.json"
 
+# --- OpenAI (Codex OAuth) ---------------------------------------------
 [openai]
 enabled = true
-# Path to the Codex CLI OAuth credentials. Leave commented out to use
-# the default ~/.codex/auth.json.
-# codex_auth_path = "/home/you/.codex/auth.json"
-# Reserved for a future API-key-only fallback path (admin key reads
-# `/v1/organization/costs`). Today, OpenAI requires Codex OAuth.
+# Path to the Codex CLI OAuth credentials. Defaults to ~/.codex/auth.json.
+# codex_auth_path = "/Users/you/.codex/auth.json"
+# Env var name for the API-key-only fallback path (currently reserved —
+# OpenAI requires Codex OAuth as of late 2025).
 admin_key_env = "OPENAI_ADMIN_KEY"
 
+# --- Z.AI (multi-account, Story 1.6 FR-6) -----------------------------
 [zai]
 enabled = true
-# Credential resolution order: env var → inline api_key → error.
-api_key_env = "ZAI_API_KEY"      # checked first; if set + non-empty, used
-# api_key = "..."                # fallback for users who don't export env vars
-# Display-only. Used when the API doesn't return a plan tier itself.
-# plan_tier = "lite"   # lite | pro | max
+# Env var name to fall back to if no account has an inline `api_key`.
+api_key_env = "ZAI_API_KEY"
+# Optional display-only plan tier label (lite | pro | max). Used when the
+# API itself doesn't return a tier.
+# plan_tier = "lite"
 
+# Define one or more accounts under [[zai.accounts]]. Each account has a
+# unique `name` (within this vendor) plus optional `api_key`, `description`,
+# `budget_usd`, and `tag` (client | personal | team).
+#
+# [[zai.accounts]]
+# name = "Default"
+# # api_key = "..."     # leave commented to use the env var ZAI_API_KEY
+# tag = "personal"
+
+# --- OpenRouter (multi-account, Story 1.6 FR-6) -----------------------
 [openrouter]
 enabled = true
 api_key_env = "OPENROUTER_API_KEY"
-# api_key = "sk-or-v1-..."
+
+# Multi-account example: bill different clients separately, set budgets per
+# account, and tag them for filtering in the menu bar / history view.
+#
+# [[openrouter.accounts]]
+# name = "ClienteAcme"
+# tag = "client"
+# budget_usd = 200.0
+# description = "Acme Corp — production usage"
+# # api_key = "sk-or-v1-..."     # or use Keychain (Story 1.20)
+#
+# [[openrouter.accounts]]
+# name = "Personal"
+# tag = "personal"
+# budget_usd = 25.0
+# # api_key = "sk-or-v1-..."
