@@ -37,6 +37,6 @@ pub mod vendors;
 
 pub use error::{AppError, Result};
 pub use format::{LabelKind, RawMetrics, compute_metrics};
-pub use uniffi_exports::ping;
+pub use uniffi_exports::{VendorInfo, get_vendor_list, ping};
 
 uniffi::include_scaffolding!("torven_core");
