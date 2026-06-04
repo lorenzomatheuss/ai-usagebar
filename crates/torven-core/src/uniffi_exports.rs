@@ -29,6 +29,13 @@
 //!   `crate::UniFfiTag`. The crate root re-exports `ping` so the generated
 //!   code can resolve `crate::ping`.
 
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+
+use crate::history::{self, AccountFilter, HistoryDb, UsageSnapshot};
+
+static HISTORY_DB: OnceLock<Mutex<Option<HistoryDb>>> = OnceLock::new();
+
 /// Smoke-test function exposed via FFI.
 ///
 /// Mirrors the `ping()` declaration in `torven_core.udl`. Returns the
@@ -62,6 +69,57 @@ pub struct VendorInfo {
     /// passed. Story 1.5 hardcodes `false` for every vendor; Story 1.6
     /// wires it to the real config probe.
     pub is_configured: bool,
+}
+
+/// Snapshot record exposed to Swift for history reads and writes.
+///
+/// This mirrors the UDL `dictionary HistorySnapshot`. The public Rust history
+/// API has a separate [`UsageSnapshot`] input type that can carry
+/// `raw_payload_json`; the FFI intentionally omits raw payloads so crash logs
+/// and Swift-side diagnostics do not accidentally expose vendor response
+/// bodies.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistorySnapshot {
+    pub id: i64,
+    pub vendor: String,
+    pub account_id: Option<String>,
+    pub ts: i64,
+    pub cost_usd: Option<f64>,
+    pub tokens_used: Option<i64>,
+    pub pct_used: Option<f64>,
+    pub metric_kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageSnapshotInput {
+    pub vendor: String,
+    pub account_id: Option<String>,
+    pub ts: i64,
+    pub cost_usd: Option<f64>,
+    pub tokens_used: Option<i64>,
+    pub pct_used: Option<f64>,
+    pub metric_kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PagedHistorySnapshots {
+    pub items: Vec<HistorySnapshot>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryAccountFilterMode {
+    All,
+    Null,
+    Specific,
+}
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum HistoryFfiError {
+    #[error("history database is not initialized")]
+    NotInitialized,
+    #[error("history storage error")]
+    Storage,
 }
 
 /// Returns the canonical list of LLM vendors Torven knows about.
@@ -107,6 +165,116 @@ pub fn get_vendor_list() -> Vec<VendorInfo> {
             is_configured: false,
         },
     ]
+}
+
+pub fn ffi_init_history(db_path: Option<String>) -> Result<(), HistoryFfiError> {
+    let path = match db_path {
+        Some(path) => PathBuf::from(path),
+        None => history::default_db_path().map_err(HistoryFfiError::from)?,
+    };
+    let db = HistoryDb::open(&path).map_err(HistoryFfiError::from)?;
+
+    let mut slot = history_slot()
+        .lock()
+        .map_err(|_| HistoryFfiError::Storage)?;
+    *slot = Some(db);
+    Ok(())
+}
+
+pub fn ffi_query_snapshots(
+    vendor: String,
+    account_filter_mode: HistoryAccountFilterMode,
+    account_id: Option<String>,
+    since_ts: i64,
+    until_ts: i64,
+    limit: i64,
+    cursor: Option<String>,
+) -> Result<PagedHistorySnapshots, HistoryFfiError> {
+    with_history_db(|db| {
+        let account_filter = match account_filter_mode {
+            HistoryAccountFilterMode::All => AccountFilter::All,
+            HistoryAccountFilterMode::Null => AccountFilter::Null,
+            HistoryAccountFilterMode::Specific => {
+                AccountFilter::Specific(account_id.as_deref().ok_or_else(|| {
+                    history::HistoryError::InvalidAccountFilter(
+                        "account_id required for Specific account filter".to_string(),
+                    )
+                })?)
+            }
+        };
+        let page = history::query_snapshots_paged(
+            db,
+            &vendor,
+            account_filter,
+            since_ts,
+            until_ts,
+            limit,
+            cursor.as_deref(),
+        )?;
+        Ok(PagedHistorySnapshots {
+            items: page.items.into_iter().map(HistorySnapshot::from).collect(),
+            next_cursor: page.next_cursor,
+        })
+    })
+}
+
+pub fn ffi_record_snapshot(snapshot: UsageSnapshotInput) -> Result<i64, HistoryFfiError> {
+    with_history_db(|db| {
+        let snapshot = UsageSnapshot {
+            vendor: snapshot.vendor,
+            account_id: snapshot.account_id,
+            ts: snapshot.ts,
+            cost_usd: snapshot.cost_usd,
+            tokens_used: snapshot.tokens_used,
+            pct_used: snapshot.pct_used,
+            metric_kind: snapshot.metric_kind,
+            raw_payload_json: None,
+        };
+        history::record_snapshot(db, &snapshot)
+    })
+}
+
+pub fn ffi_run_retention_janitor(retention_days: u32) -> Result<(), HistoryFfiError> {
+    with_history_db(|db| {
+        history::run_retention_janitor(db, retention_days)?;
+        Ok(())
+    })
+}
+
+fn history_slot() -> &'static Mutex<Option<HistoryDb>> {
+    HISTORY_DB.get_or_init(|| Mutex::new(None))
+}
+
+fn with_history_db<T>(
+    f: impl FnOnce(&HistoryDb) -> Result<T, history::HistoryError>,
+) -> Result<T, HistoryFfiError> {
+    let slot = history_slot()
+        .lock()
+        .map_err(|_| HistoryFfiError::Storage)?;
+    let db = slot.as_ref().ok_or(HistoryFfiError::NotInitialized)?;
+    f(db).map_err(HistoryFfiError::from)
+}
+
+impl From<history::HistorySnapshot> for HistorySnapshot {
+    fn from(value: history::HistorySnapshot) -> Self {
+        Self {
+            id: value.id,
+            vendor: value.vendor,
+            account_id: value.account_id,
+            ts: value.ts,
+            cost_usd: value.cost_usd,
+            tokens_used: value.tokens_used,
+            pct_used: value.pct_used,
+            metric_kind: value.metric_kind,
+        }
+    }
+}
+
+impl From<history::HistoryError> for HistoryFfiError {
+    fn from(value: history::HistoryError) -> Self {
+        let _ = value;
+        Self::Storage
+    }
 }
 
 #[cfg(test)]
