@@ -163,8 +163,8 @@ impl SettingsState {
         Self {
             focus: Focus::Primary,
             primary: cfg.ui.primary.unwrap_or(VendorId::Anthropic),
-            zai: KeyInput::from_config(cfg.zai.api_key.as_deref()),
-            openrouter: KeyInput::from_config(cfg.openrouter.api_key.as_deref()),
+            zai: KeyInput::from_config(cfg.primary_api_key(VendorId::Zai)),
+            openrouter: KeyInput::from_config(cfg.primary_api_key(VendorId::Openrouter)),
             status: String::new(),
         }
     }
@@ -305,13 +305,21 @@ pub fn save_to_path(state: &SettingsState, path: &Path) -> Result<()> {
 
     // [ui].primary
     set_string(&mut doc, "ui", "primary", state.primary.slug())?;
-    // [zai].api_key — only write if dirty AND non-empty
-    if state.zai.dirty && !state.zai.buf.is_empty() {
-        set_string(&mut doc, "zai", "api_key", &state.zai.buf)?;
+    // [[zai.accounts]] / [[openrouter.accounts]] — write into the "default"
+    // account when dirty; an empty buffer intentionally removes the saved key.
+    if state.zai.dirty {
+        if state.zai.buf.is_empty() {
+            remove_default_account_key(&mut doc, "zai")?;
+        } else {
+            upsert_default_account_key(&mut doc, "zai", &state.zai.buf)?;
+        }
     }
-    // [openrouter].api_key — same
-    if state.openrouter.dirty && !state.openrouter.buf.is_empty() {
-        set_string(&mut doc, "openrouter", "api_key", &state.openrouter.buf)?;
+    if state.openrouter.dirty {
+        if state.openrouter.buf.is_empty() {
+            remove_default_account_key(&mut doc, "openrouter")?;
+        } else {
+            upsert_default_account_key(&mut doc, "openrouter", &state.openrouter.buf)?;
+        }
     }
 
     let bytes = doc.to_string();
@@ -324,7 +332,100 @@ pub fn save_to_path(state: &SettingsState, path: &Path) -> Result<()> {
         if let Ok(meta) = std::fs::metadata(path) {
             let mut perms = meta.permissions();
             perms.set_mode(0o600);
-            let _ = std::fs::set_permissions(path, perms);
+            std::fs::set_permissions(path, perms).map_err(|e| AppError::io_at(path, e))?;
+        }
+    }
+    Ok(())
+}
+
+/// Upsert the "default" account's `api_key` under `[[{section}.accounts]]`.
+/// If a legacy `[{section}] api_key = "..."` exists, it is removed (callers
+/// land on the migrated multi-account form). If no account named "default"
+/// exists yet, a new entry is appended; otherwise the existing entry's
+/// `api_key` is updated in place.
+fn upsert_default_account_key(doc: &mut DocumentMut, section: &str, new_key: &str) -> Result<()> {
+    // Ensure the parent [section] table exists.
+    let table = doc
+        .entry(section)
+        .or_insert_with(toml_edit::table)
+        .as_table_mut()
+        .ok_or_else(|| AppError::Other(format!("config.toml: [{section}] is not a table")))?;
+
+    // Drop the legacy single-key field, if present, to avoid the migration
+    // warning re-firing every load.
+    table.remove("api_key");
+
+    // Find or create the accounts array-of-tables.
+    let accounts_item = table
+        .entry("accounts")
+        .or_insert_with(|| toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()));
+    let arr = match accounts_item {
+        toml_edit::Item::ArrayOfTables(a) => a,
+        _ => {
+            return Err(AppError::Other(format!(
+                "config.toml: [[{section}.accounts]] is not an array of tables"
+            )));
+        }
+    };
+
+    // Find the "default" account (or first account if "default" isn't named).
+    let mut idx: Option<usize> = None;
+    for (i, t) in arr.iter().enumerate() {
+        if t.get("name").and_then(|n| n.as_str()) == Some("default") {
+            idx = Some(i);
+            break;
+        }
+    }
+    if idx.is_none() && arr.is_empty() {
+        let mut t = toml_edit::Table::new();
+        t["name"] = value("default");
+        arr.push(t);
+        idx = Some(0);
+    }
+    let i = idx.unwrap_or(0);
+    // If the array existed but had no "default" entry, prepend one.
+    if arr
+        .get(i)
+        .and_then(|t| t.get("name"))
+        .and_then(|n| n.as_str())
+        != Some("default")
+    {
+        let mut t = toml_edit::Table::new();
+        t["name"] = value("default");
+        arr.push(t);
+        // The new one is the last; reference it instead.
+        let last_idx = arr.len() - 1;
+        let t = arr.get_mut(last_idx).unwrap();
+        t["api_key"] = value(new_key);
+    } else {
+        let t = arr.get_mut(i).unwrap();
+        t["api_key"] = value(new_key);
+    }
+    Ok(())
+}
+
+/// Remove the "default" account's inline `api_key` under `[[{section}.accounts]]`
+/// and remove any legacy `[{section}] api_key = "..."` that may still exist.
+fn remove_default_account_key(doc: &mut DocumentMut, section: &str) -> Result<()> {
+    if let Some(table) = doc.get_mut(section).and_then(|i| i.as_table_mut()) {
+        table.remove("api_key");
+
+        if let Some(accounts_item) = table.get_mut("accounts") {
+            let arr = match accounts_item {
+                toml_edit::Item::ArrayOfTables(a) => a,
+                _ => {
+                    return Err(AppError::Other(format!(
+                        "config.toml: [[{section}.accounts]] is not an array of tables"
+                    )));
+                }
+            };
+
+            for t in arr.iter_mut() {
+                if t.get("name").and_then(|n| n.as_str()) == Some("default") {
+                    t.remove("api_key");
+                    break;
+                }
+            }
         }
     }
     Ok(())
@@ -652,9 +753,11 @@ mod tests {
         save_to_path(&s, f.path()).unwrap();
         let raw = std::fs::read_to_string(f.path()).unwrap();
         assert!(raw.contains("primary = \"zai\""));
-        assert!(raw.contains("[zai]"));
+        // Story 1.6: keys are written under [[zai.accounts]] not [zai] api_key.
+        assert!(raw.contains("[[zai.accounts]]"));
+        assert!(raw.contains("name = \"default\""));
         assert!(raw.contains("api_key = \"zk\""));
-        assert!(raw.contains("[openrouter]"));
+        assert!(raw.contains("[[openrouter.accounts]]"));
         assert!(raw.contains("api_key = \"ok\""));
     }
 

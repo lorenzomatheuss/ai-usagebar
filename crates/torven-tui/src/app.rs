@@ -132,8 +132,8 @@ async fn build_outcome(
         VendorId::Openrouter => {
             let api_key = torven_core::config::resolve_api_key(
                 "OpenRouter",
-                &config.openrouter.api_key_env,
-                config.openrouter.api_key.as_deref(),
+                &config.openrouter_env.api_key_env,
+                config.primary_api_key(VendorId::Openrouter),
             )?;
             let cache = torven_core::cache::Cache::for_vendor("openrouter")?;
             let endpoints = openrouter::fetch::Endpoints::default();
@@ -145,8 +145,8 @@ async fn build_outcome(
         VendorId::Zai => {
             let api_key = torven_core::config::resolve_api_key(
                 "Zai",
-                &config.zai.api_key_env,
-                config.zai.api_key.as_deref(),
+                &config.zai_env.api_key_env,
+                config.primary_api_key(VendorId::Zai),
             )?;
             let cache = torven_core::cache::Cache::for_vendor("zai")?;
             let endpoints = zai::fetch::Endpoints::default();
@@ -156,7 +156,7 @@ async fn build_outcome(
                 &cache,
                 &endpoints,
                 DEFAULT_TTL,
-                config.zai.plan_tier.as_deref(),
+                config.zai_plan_tier.as_deref(),
             )
             .await?;
             Ok(outcome.into())

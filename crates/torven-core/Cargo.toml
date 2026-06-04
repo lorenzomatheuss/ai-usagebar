@@ -37,6 +37,14 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+# Story 1.6 — round-trip TOML config save preserving user comments / decor.
+# Previously lived only in `torven-tui` (settings overlay); the Vec<Account>
+# config schema now needs the same comment-preserving round-trip in core.
+toml_edit = "0.22"
+# Story 1.6 — structured warnings for legacy → multi-account config migration.
+# Only the macros are pulled in here; the consuming binary (TUI or macOS app)
+# is responsible for wiring up a subscriber.
+tracing = "0.1"
 clap = { version = "4", features = ["derive", "env"] }
 chrono = { version = "0.4", features = ["serde"] }
 fs2 = "0.4"
