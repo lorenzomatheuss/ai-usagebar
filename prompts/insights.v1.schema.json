@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://torven.app/schemas/insights.v1.json",
+  "title": "InsightsOutput",
+  "description": "Tool-use schema for the Anthropic Messages submit_insight call. Mirrors Rust's InsightsOutput struct in crates/torven-core/src/insights/schema.rs.",
+  "type": "object",
+  "required": [
+    "headline",
+    "insights",
+    "recommendation",
+    "cost_usd",
+    "latency_ms",
+    "prompt_version"
+  ],
+  "properties": {
+    "headline": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Punchy one-line summary."
+    },
+    "insights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "severity", "message", "evidence"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["Trend", "Anomaly", "BudgetRisk", "OptimizationOpportunity"]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["Info", "Warning", "Critical"]
+          },
+          "message": { "type": "string" },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "recommendation": {
+      "type": "string",
+      "maxLength": 280,
+      "description": "Single actionable recommendation."
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "latency_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Placeholder; Torven overwrites with the measured latency."
+    },
+    "prompt_version": {
+      "type": "string",
+      "description": "Snapshot of the prompt version that produced this output."
+    }
+  }
+}

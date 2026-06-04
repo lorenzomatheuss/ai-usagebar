@@ -30,8 +30,10 @@ pub mod countdown;
 pub mod error;
 pub mod format;
 pub mod history;
+pub mod insights;
 pub mod keychain;
 pub mod pacing;
+pub mod runtime;
 pub mod uniffi_exports;
 pub mod usage;
 pub mod vendor;
@@ -39,8 +41,16 @@ pub mod vendors;
 
 pub use error::{AppError, Result};
 pub use format::{LabelKind, RawMetrics, compute_metrics};
+// UniFFI's UDL-mode scaffolding looks up dictionary/enum/trait names at
+// the crate root. Re-exporting the `insights` types here lets them be
+// resolved as `crate::InsightsContext`, `crate::InsightItem`, etc.,
+// matching the UDL declarations.
+pub use insights::{
+    CancelHandle, InsightItem, InsightItemType, InsightSeverity, InsightsCallback, InsightsContext,
+    InsightsError, InsightsOutput, VendorAggregate,
+};
 pub use uniffi_exports::{
-    HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot, KeychainFfiError,
+    HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot, InsightsClient, KeychainFfiError,
     PagedHistorySnapshots, UsageSnapshotInput, VendorInfo, ffi_init_history, ffi_keychain_get_blob,
     ffi_keychain_set_blob, ffi_query_snapshots, ffi_record_snapshot, ffi_run_retention_janitor,
     get_vendor_list, ping,

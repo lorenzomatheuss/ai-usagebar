@@ -33,6 +33,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::history::{self, AccountFilter, HistoryDb, UsageSnapshot};
+use crate::insights::client::RealAnthropicClient;
+use crate::insights::{
+    CancelHandle, InsightsCallback, InsightsContext, InsightsError, InsightsOutput, LlmClient,
+};
 use crate::keychain::{self, SecretStore, blob_bytes_from_store, set_blob_bytes_for_store};
 
 static HISTORY_DB: OnceLock<Mutex<Option<HistoryDb>>> = OnceLock::new();
@@ -321,6 +325,100 @@ impl From<keychain::KeychainError> for KeychainFfiError {
     fn from(value: keychain::KeychainError) -> Self {
         let _ = value;
         Self::Storage
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Story 1.15 — `InsightsClient` FFI surface (AR-2 resolution §Decision 1).
+// ---------------------------------------------------------------------------
+
+/// Production AI Insights FFI client. Thin wrapper around
+/// [`RealAnthropicClient`] that exposes the single `[Async]` entry point
+/// declared in the UDL (`interface InsightsClient`) without leaking the
+/// trait-based internal architecture (`LlmClient` / `MockLlmClient`) across
+/// the FFI boundary.
+///
+/// ## Why a wrapper instead of exposing `RealAnthropicClient` directly
+///
+/// 1. **Naming hygiene:** `RealAnthropicClient` is an implementation detail
+///    of the Rust `LlmClient` trait pattern; the FFI surface promises a
+///    single canonical type per UDL declaration.
+/// 2. **Future-proofing:** when v1.1+ adds OpenRouter, OpenAI, or Z.AI
+///    insight providers, `InsightsClient` becomes a vendor-selecting facade
+///    that picks the right concrete `LlmClient` impl; the Swift binding
+///    shape stays identical.
+/// 3. **Async-runtime bridging:** UniFFI 0.29's **UDL mode** scaffolding
+///    does not pass `async_runtime = "tokio"` to the generated proc-macro
+///    `#[export_for_udl]` invocation, so async functions run on UniFFI's
+///    bare future driver — no tokio context. The inner future uses
+///    `reqwest::stream()` + `tokio::select!`, both of which require a
+///    tokio context. We wrap the body with `async_compat::Compat::new(...)`
+///    to provide one. Doing this inside the FFI wrapper keeps the
+///    `LlmClient::request_insight_streaming` implementation (in
+///    `insights/client.rs`) unaware of the FFI driver — the Rust-side
+///    callers (tests, AR-2 spike) run inside a real tokio runtime and
+///    don't need the wrapper.
+///
+/// See `docs/architecture/ar-2-spike-resolution.md` §Decision 1.
+pub struct InsightsClient {
+    inner: RealAnthropicClient,
+}
+
+impl InsightsClient {
+    /// Constructs a new client. The UDL `constructor(string api_key)` lowers
+    /// to this call; UniFFI scaffolding wraps the returned `Self` in
+    /// `Arc::new(...)` before crossing to Swift.
+    ///
+    /// **SECURITY:** the `api_key` argument crosses FFI as a `string`. Per
+    /// the SECURITY note in `torven_core.udl`, the Swift side MUST source it
+    /// from the Keychain (via `ffi_keychain_get_blob`) and pass it directly
+    /// into this constructor — never store it in a Swift-side cache nor log
+    /// it. The Rust copy lives inside `RealAnthropicClient` for the lifetime
+    /// of the `Arc<InsightsClient>`.
+    pub fn new(api_key: String) -> Self {
+        Self {
+            inner: RealAnthropicClient::new(api_key),
+        }
+    }
+
+    /// `[Async, Throws=InsightsError]` FFI entry point. Streams partial JSON
+    /// chunks to `callback.on_token` and resolves with the final
+    /// `InsightsOutput` (AR-2 resolution §Decision 1). `cancel_handle.cancel()`
+    /// from Swift causes the future to resolve `Err(Cancelled)` within p99
+    /// 100ms (AR-2 spike asserts this).
+    ///
+    /// ## Async-runtime bridging
+    ///
+    /// UDL-mode scaffolding does not establish a tokio context (no
+    /// `async_runtime = "tokio"` attribute on the generated
+    /// `#[export_for_udl]`). We wrap the inner future in
+    /// `async_compat::Compat::new(...)` so `reqwest::stream()` and
+    /// `tokio::select!` can find a reactor. The `async_compat` crate is
+    /// re-exported by `uniffi` itself (see `uniffi-core/src/lib.rs` —
+    /// `pub use async_compat;`).
+    pub async fn request_insight_streaming(
+        &self,
+        context: InsightsContext,
+        callback: Box<dyn InsightsCallback>,
+        cancel_handle: Arc<CancelHandle>,
+    ) -> Result<InsightsOutput, InsightsError> {
+        // UniFFI 0.29 UDL-mode scaffolding lowers `callback interface` to
+        // `Box<dyn Trait>`. The internal `LlmClient` trait takes
+        // `Arc<dyn InsightsCallback>` because tests and the AR-2 spike
+        // share a single callback across multiple owners; convert here.
+        // The `Arc::from(Box<dyn Trait>)` conversion is O(1) — it reuses
+        // the existing heap allocation as the Arc payload.
+        let callback_arc: Arc<dyn InsightsCallback> = Arc::from(callback);
+
+        // `Compat::new` adopts the tokio I/O / timer drivers for the
+        // duration of the inner future. Required because UniFFI's UDL-mode
+        // future polling driver does not establish a tokio context.
+        ::uniffi::deps::async_compat::Compat::new(self.inner.request_insight_streaming(
+            context,
+            callback_arc,
+            cancel_handle,
+        ))
+        .await
     }
 }
 
