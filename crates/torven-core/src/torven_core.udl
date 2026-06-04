@@ -42,6 +42,35 @@
 // developer dumps.
 // ---------------------------------------------------------------------------
 
+// VendorInfo — minimal metadata for a single LLM vendor.
+//
+// This is the first non-trivial Rust struct exposed to Swift through the FFI.
+// It validates the type-marshalling path for `dictionary` (struct/record) and
+// `sequence<T>` (Vec<T>) and serves as the canonical shape for vendor lists in
+// the menu-bar app.
+//
+// Field rules:
+//   * `id`              — stable lowercase slug (e.g. "anthropic"); used as
+//                         the lookup key in config and the keychain account
+//                         namespace. NEVER user-facing.
+//   * `display_name`    — UTF-8 human-readable label for the UI.
+//                         Free-form, vendor-controlled branding string.
+//   * `is_configured`   — true when the user has provided credentials for the
+//                         vendor and they passed the most recent validation.
+//                         Story 1.5 hardcodes this to `false` for all vendors;
+//                         Story 1.6 wires it to the real config probe.
+//
+// AR-3 (memory ownership): every field is owned by value on the Rust side and
+// transferred to Swift through UniFFI's normal reference-counted struct
+// pathway. The spike in Story 1.5 (see Change Log) validates that returning a
+// `sequence<VendorInfo>` from `get_vendor_list()` 100 times under `leaks`
+// produces zero leaked allocations.
+dictionary VendorInfo {
+    string id;
+    string display_name;
+    boolean is_configured;
+};
+
 namespace torven_core {
     // Smoke-test function — validates that the Rust -> FFI -> Swift pipeline
     // is wired correctly end-to-end before any real business surface is
@@ -51,4 +80,15 @@ namespace torven_core {
     // kept long-term as a no-op health check that the SwiftUI app can call on
     // launch to confirm the bundled XCFramework loaded successfully.
     string ping();
+
+    // Returns the canonical list of LLM vendors Torven knows about. Story 1.5
+    // hardcodes all 5 vendors with `is_configured = false`; Story 1.6 swaps
+    // this for a config-driven implementation that probes the user's
+    // `config.toml` to determine which vendors actually have credentials.
+    //
+    // Order is significant: the menu-bar app renders vendors in the order
+    // returned here. Current order matches the rollout / market-share
+    // priority used in the legacy Waybar widget (Anthropic first, OpenAI
+    // second, then OpenRouter, Z.AI, Gemini).
+    sequence<VendorInfo> get_vendor_list();
 };

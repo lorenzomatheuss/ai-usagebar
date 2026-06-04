@@ -43,9 +43,14 @@ clean:
 
 .PHONY: build-core build-app build-all clean-apple help-apple
 
-# Build Rust core as staticlib (aarch64 Apple Silicon)
+# Build Rust core, run uniffi-bindgen, and produce TorvenCore.xcframework.
+# Story 1.5 wires this through `apple/scripts/build-xcframework.sh`, which
+# handles per-arch cargo builds, lipo, header staging, and xcframework
+# assembly. The script gracefully falls back to single-arch on dev boxes
+# that only have one Apple Darwin target installed (see Decision D-2 in
+# Story 1.5).
 build-core:
-	cargo build --release --target aarch64-apple-darwin -p torven-core
+	apple/scripts/build-xcframework.sh
 
 # Generate Xcode project from project.yml and build the macOS app (Debug)
 build-app:
@@ -62,7 +67,7 @@ clean-apple:
 
 help-apple:
 	@echo "Torven Apple/Rust targets:"
-	@echo "  build-core   - cargo build torven-core (release, aarch64-apple-darwin)"
+	@echo "  build-core   - runs xcframework build script for torven-core"
 	@echo "  build-app    - xcodegen generate + xcodebuild scheme Torven (Debug)"
 	@echo "  build-all    - build-core then build-app"
 	@echo "  clean-apple  - cargo clean + remove apple/Torven.xcodeproj, Frameworks, build"

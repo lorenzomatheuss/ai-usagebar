@@ -240,8 +240,7 @@ pub fn handle_key(state: &mut SettingsState, code: KeyCode, mods: KeyModifiers) 
             if matches!(code, KeyCode::Enter) {
                 return match save_to_config_default(state) {
                     Ok(()) => {
-                        state.status =
-                            "saved to ~/.config/torven/config.toml (chmod 600)".into();
+                        state.status = "saved to ~/.config/torven/config.toml (chmod 600)".into();
                         Action::SavedAndClose
                     }
                     Err(e) => {
