@@ -33,7 +33,25 @@ uniffi-cli = ["uniffi/cli"]
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "macros", "time", "fs", "process", "signal"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+# Story 1.15 — `CancellationToken` for AR-2 cancellation strategy
+# (`tokio::select!` race between HTTP stream and Swift-initiated cancel).
+# See docs/architecture/ar-2-spike-resolution.md §Decision 3.
+tokio-util = { version = "0.7", features = ["rt"] }
+# Story 1.15 — `OnceCell` for the FFI-owned single-instance tokio runtime
+# (`new_current_thread()` per ADR-7 + AR-2 resolution §Decision 2).
+once_cell = "1.19"
+# Story 1.15 — `async_trait` macro for the object-safe `LlmClient` trait
+# (`Arc<dyn LlmClient>` in mocks + real client behind same surface).
+async-trait = "0.1"
+# Story 1.15 — `stream` feature enables `bytes_stream()` for the Anthropic
+# streaming endpoint; `json` is retained for serializing the request body.
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+# Story 1.15 — `futures-util` provides `StreamExt::next()` for iterating the
+# Anthropic SSE byte stream inside the `tokio::select!` loop.
+futures-util = "0.3"
+# Story 1.15 — SHA-256 hashing for privacy redaction
+# (deterministic, non-reversible `account_id` hashes per PRD §6.5).
+sha2 = "0.10"
 rusqlite = { version = "0.31", features = ["bundled"] }
 rusqlite_migration = "1.2"
 serde = { version = "1", features = ["derive"] }
@@ -81,6 +99,19 @@ mockito = "1"
 insta = { version = "1", features = ["json"] }
 pretty_assertions = "1"
 tempfile = "3"
+# Story 1.15 — `MockLlmClient` implements the `async_trait`-flavored
+# `LlmClient` trait inside integration tests; the macro is needed both in
+# `[dependencies]` (for the trait definition consumed in the runtime crate)
+# and in `[dev-dependencies]` is *not* needed separately because cargo
+# unifies the version. We keep this comment as documentation; the dep above
+# in `[dependencies]` covers both compile contexts.
+#
+# `tokio` is already in `[dependencies]`; we re-list with the `rt` + `macros`
+# + `time` features that integration tests need (e.g. `#[tokio::test]`).
+tokio = { version = "1", features = ["rt", "macros", "time", "net", "io-util"] }
+# Story 1.15 — `getrusage` for the AR-2 spike's RSS-delta assertion.
+# Test-only; the production crate does not need libc directly.
+libc = "0.2"
 
 # Bootstrap stubs declared in Story 1.1 — Wave 1 stories trim this list as
 # they consume each dep. Story 1.4 (extract-core) consumed tokio, reqwest,

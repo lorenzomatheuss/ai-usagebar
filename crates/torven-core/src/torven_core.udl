@@ -112,6 +112,83 @@ enum KeychainFfiError {
     "Storage",
 };
 
+// ---------------------------------------------------------------------------
+// Story 1.15 — AI Insights surface (AR-2 resolution §Decision 1).
+// ---------------------------------------------------------------------------
+
+// Error enum for the AI Insights subsystem.
+//
+// `Cancelled` is required by the cancellation strategy (AR-2 resolution
+// §Decision 3): the `[Async]` future resolves with `Err(Cancelled)` when
+// the Swift caller invokes `CancelHandle::cancel()` mid-stream.
+[Error]
+enum InsightsError {
+    "Network",
+    "Auth",
+    "RateLimit",
+    "InputBudgetExceeded",
+    "Timeout",
+    "Cancelled",
+    "ParseFailure",
+    "SchemaInvalid",
+};
+
+// Per-vendor numeric aggregate sent to Anthropic. PRD §6.5 privacy
+// invariants apply — account_id is the hashed form, never plaintext.
+dictionary VendorAggregate {
+    string vendor_id;
+    string? account_id;
+    u64 total_tokens;
+    f64 total_cost_usd;
+    u32 window_days;
+    sequence<u64> daily_tokens;
+    sequence<f64> daily_cost_usd;
+    string? tag;
+};
+
+dictionary InsightsContext {
+    sequence<VendorAggregate> usage_payload;
+    u32 since_days;
+    string prompt_version;
+};
+
+enum InsightItemType {
+    "Trend",
+    "Anomaly",
+    "BudgetRisk",
+    "OptimizationOpportunity",
+};
+
+enum InsightSeverity {
+    "Info",
+    "Warning",
+    "Critical",
+};
+
+dictionary InsightItem {
+    InsightItemType type_;
+    InsightSeverity severity;
+    string message;
+    string evidence;
+};
+
+dictionary InsightsOutput {
+    string headline;
+    sequence<InsightItem> insights;
+    string recommendation;
+    f64 cost_usd;
+    i64 latency_ms;
+    string prompt_version;
+};
+
+// Streaming callback invoked from inside the Rust client for each partial
+// JSON token chunk. The final InsightsOutput is the Future's return value
+// (AR-2 resolution §Decision 1) — there is no on_done method.
+callback interface InsightsCallback {
+    void on_token(string token);
+    void on_error(string error);
+};
+
 namespace torven_core {
     // Smoke-test function — validates that the Rust -> FFI -> Swift pipeline
     // is wired correctly end-to-end before any real business surface is
