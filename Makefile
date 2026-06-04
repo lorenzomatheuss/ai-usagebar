@@ -67,7 +67,7 @@ clean-apple:
 
 help-apple:
 	@echo "Torven Apple/Rust targets:"
-	@echo "  build-core   - cargo build torven-core (release, aarch64-apple-darwin)"
+	@echo "  build-core   - runs xcframework build script for torven-core"
 	@echo "  build-app    - xcodegen generate + xcodebuild scheme Torven (Debug)"
 	@echo "  build-all    - build-core then build-app"
 	@echo "  clean-apple  - cargo clean + remove apple/Torven.xcodeproj, Frameworks, build"

@@ -156,7 +156,6 @@ mod tests {
                 "vendor {} has empty display_name",
                 v.id
             );
-            assert!(v.display_name.is_ascii() || !v.display_name.is_empty());
         }
     }
 
