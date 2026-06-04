@@ -71,6 +71,22 @@ dictionary VendorInfo {
     boolean is_configured;
 };
 
+dictionary HistorySnapshot {
+    i64 id;
+    string vendor;
+    string? account_id;
+    i64 ts;
+    f64? cost_usd;
+    i64? tokens_used;
+    f64? pct_used;
+    string metric_kind;
+};
+
+enum HistoryFfiError {
+    "NotInitialized",
+    "Storage",
+};
+
 namespace torven_core {
     // Smoke-test function — validates that the Rust -> FFI -> Swift pipeline
     // is wired correctly end-to-end before any real business surface is
@@ -91,4 +107,25 @@ namespace torven_core {
     // priority used in the legacy Waybar widget (Anthropic first, OpenAI
     // second, then OpenRouter, Z.AI, Gemini).
     sequence<VendorInfo> get_vendor_list();
+
+    // Initializes the Rust-owned SQLite history database. If `db_path` is not
+    // provided, Rust uses ~/Library/Application Support/Torven/history.db on
+    // macOS. Swift must not access SQLite directly; every history read/write
+    // crosses this FFI boundary.
+    [Throws=HistoryFfiError]
+    void ffi_init_history(string? db_path);
+
+    [Throws=HistoryFfiError]
+    sequence<HistorySnapshot> ffi_query_snapshots(
+        string vendor,
+        string? account_id,
+        i64 since_ts,
+        i64 until_ts
+    );
+
+    [Throws=HistoryFfiError]
+    void ffi_record_snapshot(HistorySnapshot snapshot);
+
+    [Throws=HistoryFfiError]
+    void ffi_run_retention_janitor(u32 retention_days);
 };
