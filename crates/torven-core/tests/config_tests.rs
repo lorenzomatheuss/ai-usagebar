@@ -83,7 +83,9 @@ fn test_legacy_migration_openrouter() {
 
     // A warning was emitted.
     assert!(
-        warnings.iter().any(|w| w.contains("openrouter") && w.contains("migrated")),
+        warnings
+            .iter()
+            .any(|w| w.contains("openrouter") && w.contains("migrated")),
         "expected migration warning, got {warnings:?}"
     );
 }
@@ -176,28 +178,31 @@ api_key_env = "OPENROUTER_API_KEY"
 
     let mut c = Config::load_from(f.path()).expect("parse");
     // Mutate: add an account.
-    c.accounts.get_mut(&VendorId::Openrouter).unwrap().push(Account {
-        name: "Personal".to_string(),
-        api_key: Some("sk-or-personal".to_string()),
-        description: None,
-        budget_usd: Some(50.0),
-        tag: Some(AccountTag::Personal),
-    });
+    c.accounts
+        .get_mut(&VendorId::Openrouter)
+        .unwrap()
+        .push(Account {
+            name: "Personal".to_string(),
+            api_key: Some("sk-or-personal".to_string()),
+            description: None,
+            budget_usd: Some(50.0),
+            tag: Some(AccountTag::Personal),
+        });
     save_config(&c, f.path()).expect("save");
 
     let raw = std::fs::read_to_string(f.path()).unwrap();
     // User comments survive.
     assert!(
         raw.contains("# user-written comment ABOVE display"),
-        "lost ABOVE comment: {raw}"
+        "lost ABOVE display comment"
     );
     assert!(
         raw.contains("# user-written comment INSIDE display"),
-        "lost INSIDE comment: {raw}"
+        "lost INSIDE display comment"
     );
     assert!(
         raw.contains("# a comment between sections"),
-        "lost between-section comment: {raw}"
+        "lost between-section comment"
     );
 
     // Re-parse and assert the mutation landed.
@@ -229,14 +234,21 @@ api_key = "sk-zai-legacy"
     // The new file uses [[zai.accounts]] form.
     assert!(
         raw.contains("[[zai.accounts]]"),
-        "expected [[zai.accounts]] section, got:\n{raw}"
+        "expected [[zai.accounts]] section after legacy migration"
     );
     assert!(raw.contains("name = \"default\""));
     assert!(raw.contains("sk-zai-legacy"));
+    let doc: toml_edit::DocumentMut = raw.parse().expect("saved TOML parseable");
+    assert!(
+        doc.get("zai")
+            .and_then(|item| item.as_table())
+            .and_then(|table| table.get("api_key"))
+            .is_none(),
+        "legacy [zai].api_key must not remain after migration"
+    );
 
     // Re-loading produces no migration warnings — we're in the new shape now.
-    let (_c2, warnings) =
-        Config::load_from_str_with_warnings(&raw).expect("re-parse new shape");
+    let (_c2, warnings) = Config::load_from_str_with_warnings(&raw).expect("re-parse new shape");
     assert!(
         warnings.is_empty(),
         "expected no warnings after migration, got: {warnings:?}"
@@ -257,7 +269,8 @@ fn test_validation_budget_negative() {
     let c = Config::load_from(f.path()).unwrap();
     let errs = validate_config(&c);
     assert!(
-        errs.iter().any(|e| matches!(e, ConfigError::NegativeBudget { got, .. } if *got == -5.0)),
+        errs.iter()
+            .any(|e| matches!(e, ConfigError::NegativeBudget { got, .. } if *got == -5.0)),
         "expected NegativeBudget, got {errs:?}"
     );
 }
@@ -279,11 +292,13 @@ fn test_validation_empty_name_and_duplicate() {
     let c = Config::load_from(f.path()).unwrap();
     let errs = validate_config(&c);
     assert!(
-        errs.iter().any(|e| matches!(e, ConfigError::EmptyAccountName { .. })),
+        errs.iter()
+            .any(|e| matches!(e, ConfigError::EmptyAccountName { .. })),
         "expected EmptyAccountName, got {errs:?}"
     );
     assert!(
-        errs.iter().any(|e| matches!(e, ConfigError::DuplicateAccountName { .. })),
+        errs.iter()
+            .any(|e| matches!(e, ConfigError::DuplicateAccountName { .. })),
         "expected DuplicateAccountName, got {errs:?}"
     );
 }
@@ -352,7 +367,10 @@ fn test_validation_thresholds_inverted() {
 fn test_validation_passes_on_default_config() {
     let c = Config::default();
     let errs = validate_config(&c);
-    assert!(errs.is_empty(), "default config should validate; got {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "default config should validate; got {errs:?}"
+    );
 }
 
 // ---- AccountTag serde ----

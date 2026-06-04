@@ -68,7 +68,13 @@ jobs:
           fi
 
       - name: Generate Xcode project
-        run: cd apple && xcodegen generate
+        run: |
+          cd apple
+          xcodegen generate
+          # XcodeGen 2.45 can emit objectVersion 77, which requires newer
+          # Xcode than the macos-14/Xcode 15.4 runner. Keep CI on the Xcode 15
+          # project format until the runner image moves forward.
+          perl -0pi -e 's/objectVersion = 77;/objectVersion = 60;/' Torven.xcodeproj/project.pbxproj
 
       - name: Build app (no signing)
         run: |

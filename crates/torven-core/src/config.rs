@@ -118,9 +118,7 @@ pub enum ConfigError {
     )]
     InvalidThresholds { amber: f64, critical: f64 },
 
-    #[error(
-        "[ai_insights]: max_cost_usd must be >= 0, got {got}"
-    )]
+    #[error("[ai_insights]: max_cost_usd must be >= 0, got {got}")]
     NegativeMaxCost { got: f64 },
 
     #[error("[history]: retention_days must be > 0, got {got}")]
@@ -144,7 +142,7 @@ pub fn validate_config(config: &Config) -> Vec<ConfigError> {
 
     // Per-vendor account checks.
     for (vendor, accounts) in &config.accounts {
-        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         for acct in accounts {
             let v = vendor.slug().to_string();
             if acct.name.trim().is_empty() {
@@ -152,7 +150,7 @@ pub fn validate_config(config: &Config) -> Vec<ConfigError> {
                     vendor: v.clone(),
                     name: acct.name.clone(),
                 });
-            } else if !seen.insert(acct.name.as_str()) {
+            } else if !seen.insert(acct.name.trim().to_lowercase()) {
                 errs.push(ConfigError::DuplicateAccountName {
                     vendor: v.clone(),
                     name: acct.name.clone(),
@@ -573,8 +571,7 @@ impl Config {
 
         if !raw.zai.accounts.is_empty() && raw.zai.api_key.is_some() {
             warnings.push(
-                "zai: both [[zai.accounts]] and legacy api_key are set — accounts wins"
-                    .to_string(),
+                "zai: both [[zai.accounts]] and legacy api_key are set — accounts wins".to_string(),
             );
         } else if raw.zai.accounts.is_empty()
             && raw.zai.api_key.as_deref().is_some_and(|k| !k.is_empty())
@@ -593,8 +590,7 @@ impl Config {
                 .as_deref()
                 .is_some_and(|k| !k.is_empty())
         {
-            warnings
-                .push("openrouter: migrated legacy api_key to default account".to_string());
+            warnings.push("openrouter: migrated legacy api_key to default account".to_string());
         }
 
         let config = Config::try_from(raw)?;
@@ -771,7 +767,7 @@ pub fn save_config(config: &Config, path: &Path) -> Result<()> {
         if let Ok(meta) = std::fs::metadata(path) {
             let mut perms = meta.permissions();
             perms.set_mode(0o600);
-            let _ = std::fs::set_permissions(path, perms);
+            std::fs::set_permissions(path, perms).map_err(|e| AppError::io_at(path, e))?;
         }
     }
     Ok(())
@@ -903,10 +899,7 @@ fn set_bool(doc: &mut DocumentMut, section: &str, key: &str, new_value: bool) ->
 
 /// Resolve a dotted section path (e.g. `display.thresholds`) into a mutable
 /// table reference, creating intermediate tables as needed.
-fn navigate_table<'a>(
-    doc: &'a mut DocumentMut,
-    section: &str,
-) -> Result<&'a mut toml_edit::Table> {
+fn navigate_table<'a>(doc: &'a mut DocumentMut, section: &str) -> Result<&'a mut toml_edit::Table> {
     let parts: Vec<&str> = section.split('.').collect();
     let mut current: &mut toml_edit::Table = doc.as_table_mut();
     for part in parts {

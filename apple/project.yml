@@ -1,6 +1,7 @@
 name: Torven
 options:
   bundleIdPrefix: com.torven
+  xcodeVersion: "15.4"
   deploymentTarget:
     macOS: "13.0"
 settings:

@@ -2,9 +2,9 @@
 
 Decisions taken autonomously during YOLO implementation of Story 1.6.
 
-## D1 — `RawConfig` shape supports both schemas via `serde(untagged)` per vendor section
+## D1 — `RawConfig` shape supports both schemas via optional/default vendor fields
 
-**Decision:** Each per-vendor `RawXxx` struct accepts EITHER the legacy fields (`api_key`, `api_key_env`, `plan_tier`) OR the new `accounts = [...]` array, with a `#[serde(default)]` so users can omit a vendor entirely. The top-level `RawConfig` then implements `TryFrom<RawConfig> for Config` and emits a `tracing::warn!` per vendor when legacy fields are detected.
+**Decision:** Each per-vendor `RawVendorSection` accepts legacy fields (`api_key`, `api_key_env`, `plan_tier`) and/or the new `accounts = [...]` array through optional fields plus `#[serde(default)]`, so users can omit a vendor entirely. The top-level `RawConfig` then implements `TryFrom<RawConfig> for Config` and emits a `tracing::warn!` per vendor when legacy fields are detected.
 
 **Why:** Avoids two separate parse passes (one to detect schema, then re-parse). Single deserialize, then a structural conversion. Keeps backward compat for users who left their `config.toml` from v0.x untouched.
 

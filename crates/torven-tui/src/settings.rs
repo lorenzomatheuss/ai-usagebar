@@ -240,8 +240,7 @@ pub fn handle_key(state: &mut SettingsState, code: KeyCode, mods: KeyModifiers) 
             if matches!(code, KeyCode::Enter) {
                 return match save_to_config_default(state) {
                     Ok(()) => {
-                        state.status =
-                            "saved to ~/.config/torven/config.toml (chmod 600)".into();
+                        state.status = "saved to ~/.config/torven/config.toml (chmod 600)".into();
                         Action::SavedAndClose
                     }
                     Err(e) => {
@@ -307,13 +306,20 @@ pub fn save_to_path(state: &SettingsState, path: &Path) -> Result<()> {
     // [ui].primary
     set_string(&mut doc, "ui", "primary", state.primary.slug())?;
     // [[zai.accounts]] / [[openrouter.accounts]] — write into the "default"
-    // account when the field is dirty AND non-empty (Story 1.6 multi-account
-    // migration; UI is single-account until Story 1.20).
-    if state.zai.dirty && !state.zai.buf.is_empty() {
-        upsert_default_account_key(&mut doc, "zai", &state.zai.buf)?;
+    // account when dirty; an empty buffer intentionally removes the saved key.
+    if state.zai.dirty {
+        if state.zai.buf.is_empty() {
+            remove_default_account_key(&mut doc, "zai")?;
+        } else {
+            upsert_default_account_key(&mut doc, "zai", &state.zai.buf)?;
+        }
     }
-    if state.openrouter.dirty && !state.openrouter.buf.is_empty() {
-        upsert_default_account_key(&mut doc, "openrouter", &state.openrouter.buf)?;
+    if state.openrouter.dirty {
+        if state.openrouter.buf.is_empty() {
+            remove_default_account_key(&mut doc, "openrouter")?;
+        } else {
+            upsert_default_account_key(&mut doc, "openrouter", &state.openrouter.buf)?;
+        }
     }
 
     let bytes = doc.to_string();
@@ -326,7 +332,7 @@ pub fn save_to_path(state: &SettingsState, path: &Path) -> Result<()> {
         if let Ok(meta) = std::fs::metadata(path) {
             let mut perms = meta.permissions();
             perms.set_mode(0o600);
-            let _ = std::fs::set_permissions(path, perms);
+            std::fs::set_permissions(path, perms).map_err(|e| AppError::io_at(path, e))?;
         }
     }
     Ok(())
@@ -337,11 +343,7 @@ pub fn save_to_path(state: &SettingsState, path: &Path) -> Result<()> {
 /// land on the migrated multi-account form). If no account named "default"
 /// exists yet, a new entry is appended; otherwise the existing entry's
 /// `api_key` is updated in place.
-fn upsert_default_account_key(
-    doc: &mut DocumentMut,
-    section: &str,
-    new_key: &str,
-) -> Result<()> {
+fn upsert_default_account_key(doc: &mut DocumentMut, section: &str, new_key: &str) -> Result<()> {
     // Ensure the parent [section] table exists.
     let table = doc
         .entry(section)
@@ -354,15 +356,15 @@ fn upsert_default_account_key(
     table.remove("api_key");
 
     // Find or create the accounts array-of-tables.
-    let accounts_item = table.entry("accounts").or_insert_with(|| {
-        toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new())
-    });
+    let accounts_item = table
+        .entry("accounts")
+        .or_insert_with(|| toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()));
     let arr = match accounts_item {
         toml_edit::Item::ArrayOfTables(a) => a,
         _ => {
             return Err(AppError::Other(format!(
                 "config.toml: [[{section}.accounts]] is not an array of tables"
-            )))
+            )));
         }
     };
 
@@ -382,7 +384,12 @@ fn upsert_default_account_key(
     }
     let i = idx.unwrap_or(0);
     // If the array existed but had no "default" entry, prepend one.
-    if arr.get(i).and_then(|t| t.get("name")).and_then(|n| n.as_str()) != Some("default") {
+    if arr
+        .get(i)
+        .and_then(|t| t.get("name"))
+        .and_then(|n| n.as_str())
+        != Some("default")
+    {
         let mut t = toml_edit::Table::new();
         t["name"] = value("default");
         arr.push(t);
@@ -393,6 +400,33 @@ fn upsert_default_account_key(
     } else {
         let t = arr.get_mut(i).unwrap();
         t["api_key"] = value(new_key);
+    }
+    Ok(())
+}
+
+/// Remove the "default" account's inline `api_key` under `[[{section}.accounts]]`
+/// and remove any legacy `[{section}] api_key = "..."` that may still exist.
+fn remove_default_account_key(doc: &mut DocumentMut, section: &str) -> Result<()> {
+    if let Some(table) = doc.get_mut(section).and_then(|i| i.as_table_mut()) {
+        table.remove("api_key");
+
+        if let Some(accounts_item) = table.get_mut("accounts") {
+            let arr = match accounts_item {
+                toml_edit::Item::ArrayOfTables(a) => a,
+                _ => {
+                    return Err(AppError::Other(format!(
+                        "config.toml: [[{section}.accounts]] is not an array of tables"
+                    )));
+                }
+            };
+
+            for t in arr.iter_mut() {
+                if t.get("name").and_then(|n| n.as_str()) == Some("default") {
+                    t.remove("api_key");
+                    break;
+                }
+            }
+        }
     }
     Ok(())
 }
