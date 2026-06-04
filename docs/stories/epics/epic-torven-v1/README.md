@@ -30,17 +30,17 @@ Estas 11 stories podem ser iniciadas **antes** da UX spec estar pronta. São o f
 
 | ID | Story | Status | Paralelização |
 |----|-------|--------|---------------|
-| 1.1 | Bootstrap Cargo workspace + Xcode project via XcodeGen | Draft | INDEP |
-| 1.2 | Setup UniFFI binding tool | Draft | SEQ após 1.1 |
-| 1.3 | Cleanup Linux-coupled code (waybar/widget/pango/tooltip/theme/active) | Draft | PAR com 1.2 (após 1.1) |
-| 1.4 | Migrate format.rs para RawMetrics + extrair torven-core lib | Draft | SEQ após 1.3 |
-| 1.5 | First FFI bridge: get_vendor_list() + consumir em Swift skeleton | Draft | SEQ após 1.2 + 1.4 |
-| 1.6 | Config migration para Vec<Account> shape (FR-6 multi-account schema) | Draft | PAR com 1.5 (após 1.4) |
-| 1.13 | History SQLite layer no torven-core + FFI helpers | Draft | SEQ após 1.4 |
-| 1.15 | AI Insights core: Anthropic client + tool_use + streaming callback | Draft | SEQ após 1.13 |
-| 1.17 | Eval runner bin (torven-evals) + dataset 30 casos rotulados | Draft | PAR com 1.15 (após 1.13) |
-| 1.20 | Keychain migration: TOML api_keys → macOS Keychain via security-framework | Draft | SEQ após 1.6 |
-| 1.26 | CI baseline: cargo test + clippy + cargo machete + xcodebuild scaffold | Draft | PAR (após 1.1) |
+| 1.1 | Bootstrap Cargo workspace + Xcode project via XcodeGen | Done | INDEP |
+| 1.2 | Setup UniFFI binding tool | Done | SEQ após 1.1 |
+| 1.3 | Cleanup Linux-coupled code (waybar/widget/pango/tooltip/theme/active) | Done | PAR com 1.2 (após 1.1) |
+| 1.4 | Migrate format.rs para RawMetrics + extrair torven-core lib | Done | SEQ após 1.3 |
+| 1.5 | First FFI bridge: get_vendor_list() + consumir em Swift skeleton | Done | SEQ após 1.2 + 1.4 |
+| 1.6 | Config migration para Vec<Account> shape (FR-6 multi-account schema) | Done | PAR com 1.5 (após 1.4) |
+| 1.13 | History SQLite layer no torven-core + FFI helpers | Ready | SEQ após 1.4 |
+| 1.15 | AI Insights core: Anthropic client + tool_use + streaming callback | Ready | SEQ após 1.13 |
+| 1.17 | Eval runner bin (torven-evals) + dataset 30 casos rotulados | Ready | PAR com 1.15 (após 1.13) |
+| 1.20 | Keychain migration: TOML api_keys → macOS Keychain via security-framework | Ready | SEQ após 1.6 |
+| 1.26 | CI baseline: cargo test + clippy + cargo machete + xcodebuild scaffold | Done (CONCERNS) | PAR (após 1.1) |
 
 ### Grupo 2 — UI + SwiftUI (aguardam UX spec — NÃO criar ainda)
 
