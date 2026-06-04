@@ -1,0 +1,274 @@
+schema: 1
+storyId: 1.15.ai-insights-core
+story: '1.15'
+gate: PASS
+verdict: PASS
+score: 9.6
+gateDate: '2026-06-04'
+commit_reviewed: 09f5941
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-04T13:30:00Z'
+checked_at: '2026-06-04T13:30:00Z'
+status_reason: >-
+  AI Insights core backend fully delivered: trait `LlmClient` + `MockLlmClient`
+  + `RealAnthropicClient`, budget guards, SHA-256 privacy redaction, tokio
+  runtime via OnceCell new_current_thread, CancelHandle wrapping
+  CancellationToken, `[Async] InsightsClient` exposed via UDL with
+  `async_compat::Compat::new(...)` bridge. AR-2 spike re-run by QA: 3/3 tests
+  GREEN, 5/5 assertions PASS (p99 cancel=343µs, RSS delta=0 bytes across 1000
+  cycles, happy-path 100/100 OK). 178 tests green workspace-wide, clippy clean,
+  cargo machete clean. All 10 ACs verified. Zero HIGH/CRITICAL issues.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: pass
+  security: pass
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      Module layout is clean and cohesive: `insights/{mod,schema,llm_client,
+      client,budget,cancel,eval}.rs` + `runtime.rs` + `uniffi_exports.rs`
+      additions. Naming is idiomatic. Error handling uses
+      `thiserror`-derived `InsightsError` with semantically distinct variants
+      (incl. `Cancelled` per AR-2 §Decision 1). `RealAnthropicClient` uses
+      `tokio::select!` with `biased;` arm so cancellation is preferred over
+      chunk consumption — exactly right. `CancelHandle::new()` returns `Self`
+      so UDL constructor scaffolding wraps in `Arc::new(...)`;
+      `CancelHandle::new_arc()` for Rust-side callers — correct UDL ABI bridge.
+      `InsightsClient` wrapper in `uniffi_exports.rs` bridges
+      `Box<dyn InsightsCallback>` → `Arc<dyn InsightsCallback>` via
+      `Arc::from(Box)` (O(1)) and wraps inner future in
+      `::uniffi::deps::async_compat::Compat::new(...)` to establish tokio
+      context (UDL-mode lacks `async_runtime = "tokio"` proc-macro arg). The
+      thin-wrapper pattern (vs exposing `RealAnthropicClient` directly) is
+      future-proof for v1.1+ multi-vendor insights. Privacy redaction in
+      `redact_payload` is idempotent (8-hex-char detection skips already-hashed
+      IDs).
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      Coverage strong: 148 lib unit tests pass (incl. ~25 new under
+      `insights/*`), `tests/insights_e2e.rs` has the 3 required AC-9 tests
+      (test_insights_with_mock, test_budget_exceeded, test_privacy_no_api_keys),
+      `MockLlmClient` honours cancellation (`mock_honours_cancellation`),
+      `redact_payload_*` round-trip tests cover plaintext-name hashing and
+      hash-idempotence, `parse_input_json_delta_*` tests cover SSE event
+      parsing happy + ignore paths. Workspace-wide: 178 tests pass total (lib +
+      anthropic_e2e + config + history + insights + keychain + tui). AR-2
+      spike (3 `#[ignore]`'d tests) re-run by QA — see `performance` check.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: 10/10 ACs verified — see acs_breakdown.
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      Workspace tests all green; no behavioural changes to existing modules.
+      `cargo test --workspace` → 178 tests pass, 0 fail (4 live tests +
+      1 macOS keychain test + 3 AR-2 spike tests are correctly gated by
+      `#[ignore]`). New deps (`tokio-util`, `once_cell`, `async-trait`,
+      `reqwest stream`, `sha2`, `futures-util`, `libc` dev) are all consumed
+      (`cargo machete` clean). `cargo fmt --check` clean.
+      `cargo clippy -p torven-core --all-targets -- -D warnings` clean.
+
+  - name: performance
+    verdict: PASS
+    notes: >-
+      AR-2 spike re-run by QA (cargo test -p torven-core --test
+      ar2_async_ffi_spike -- --ignored --nocapture --test-threads=1, 330.43s).
+      Empirical results: cycles=1000, p50=144.042µs, p99=343.208µs,
+      max=557.459µs — 290× below the 100ms ceiling. RSS samples at i=10/500/990
+      all 12,484,608 bytes → delta=0 bytes (limit 5 MiB). Happy-path: 100/100
+      cycles return Ok with prompt_version="v1" and ≥1 token emitted. Zero
+      `on_token` callbacks fired after `cancel()` observed across all 1000
+      cancel cycles (catches the AR-2 "orphan task" symptom directly per
+      spike doc §Decision 4 note). 5/5 assertions GREEN. Numbers slightly
+      better than story Change Log (p99=343µs vs 433.6µs originally
+      recorded) — re-run variance, within noise.
+
+  - name: security
+    verdict: PASS
+    notes: >-
+      OWASP basics verified. **Privacy:** `RealAnthropicClient::redact_payload`
+      replaces plaintext account names with `sha256(vendor_id +
+      account_name)[..8]` before serialization — covered by
+      `redact_payload_hashes_plaintext_account_names` and
+      `redact_payload_idempotent_for_already_hashed_ids`. The integration test
+      `test_privacy_no_api_keys` round-trips `InsightsContext` through serde
+      and asserts no forbidden substrings ("api_key", "apiKey",
+      "access_token", "refresh_token", "Bearer ", "sk-", "Acme") appear, and
+      that `account_id` length ≤ 16 chars (catches plaintext leakage).
+      **Logging discipline:** `grep -rn (tracing!|eprintln!|println!|info!|
+      warn!|debug!|error!)` in `crates/torven-core/src/insights/` + `runtime.rs`
+      + new `uniffi_exports.rs` block returns zero hits — api_key cannot leak
+      via logs. **API key handling:** `api_key` is held as `String` inside
+      `RealAnthropicClient` and only ever crossed via the `x-api-key` HTTP
+      header (one call site in `client.rs:164`); never echoed to stdout, not
+      formatted into error messages. **No dynamic code execution** (no
+      `eval`-equivalent). **No SQL** in this story (history layer untouched).
+      **HTTPS:** reqwest with `rustls-tls` features pinned; default base URL
+      is `https://api.anthropic.com`. **Auth/RateLimit/Network error paths**
+      surface vendor response body via `text()` but those bodies belong to
+      Anthropic, not the user secret. **Tokens:** UDL note enforces
+      api_key sourced from Keychain on Swift side (Story 1.20 SecretStore).
+
+  - name: documentation
+    verdict: PASS
+    notes: >-
+      Story file File List exhaustive (created + modified itemised
+      per-file). Change Log has full status-transition trail
+      (Draft→Ready→InProgress→InReview) with both 2026-06-04 dev rows
+      capturing T8 phase-1 (D-1 deferred) and phase-2 (D-1 reversed,
+      `[Async] InsightsClient` landed). AR-2 spike metrics recorded in
+      Change Log (p50/p99/max/RSS delta/alive_tasks baseline). Decision log
+      `decision-log-1.15.md` mentions D-1 (REVERSED with rationale), D-2
+      (chars/4 heuristic), D-3 (8-hex hash), D-4 (eval stub).
+      `docs/architecture/ar-2-spike-resolution.md` documents the design
+      decisions binding the story. UDL has section comment blocks for
+      every Story 1.15 type. Module docs in `insights/*.rs` and
+      `runtime.rs` link to AR-2 doc. Crate-level docs in
+      `insights/mod.rs` describe layout.
+
+acs_verified: '10/10'
+acs_breakdown:
+  AC-1: >-
+    PASS — `prompts/insights.v1.md` has frontmatter (version, created_at,
+    author, superseded_by, eval_baseline_score) and body with
+    `{{usage_payload}}` + `{{user_context.since_days}}` placeholders,
+    instructing single `submit_insight` tool call.
+  AC-2: >-
+    PASS — `prompts/insights.v1.schema.json` is a draft 2020-12 JSON Schema
+    with required headline/insights/recommendation/cost_usd/latency_ms/
+    prompt_version, maxLength=120 on headline + 280 on recommendation,
+    enum constraints on type and severity, matches `InsightsOutput` struct
+    in `schema.rs`.
+  AC-3: >-
+    PASS — `LlmClient` trait in `insights/llm_client.rs` declares
+    `async fn request_insight_streaming(&self, context: InsightsContext,
+    callback: Arc<dyn InsightsCallback>, cancel: Arc<CancelHandle>) ->
+    Result<InsightsOutput, InsightsError>` via `#[async_trait]`. Both
+    `MockLlmClient` and `RealAnthropicClient` implement it identically.
+    Third `cancel` parameter as required per AR-2 §Decision 3.
+  AC-4: >-
+    PASS — `InsightsContext` (schema.rs:43) contains only
+    `usage_payload: Vec<VendorAggregate>`, `since_days: u32`,
+    `prompt_version: String`. `VendorAggregate` carries only numeric
+    aggregates (`total_tokens: u64`, `total_cost_usd: f64`,
+    `window_days: u32`, `daily_tokens: Vec<u64>`,
+    `daily_cost_usd: Vec<f64>`) plus opaque `account_id: Option<String>`
+    (hashed) and free-form `tag: Option<String>`. No `api_key`, no raw
+    account names. Privacy invariant documented in struct doc comment.
+  AC-5: >-
+    PASS — Budget guards in `insights/budget.rs`: `MAX_INPUT_TOKENS = 8000`,
+    `RATE_LIMIT_WINDOW = 60s`, `estimate_input_tokens` (chars/4 via
+    `div_ceil`), `check_cost_budget` returns
+    `InsightsError::InputBudgetExceeded` above limit, `RateLimiter::
+    try_acquire` returns `InsightsError::RateLimit` if called within
+    window. `max_tokens = 1000` set in `AnthropicRequest` (client.rs:146).
+    Timeout 15s on reqwest client (client.rs:79) maps timeout errors to
+    `InsightsError::Timeout { seconds: 15 }`. Unit tests cover all four
+    guards.
+  AC-6: >-
+    PASS — UDL `callback interface InsightsCallback` (torven_core.udl:187)
+    declares only `on_token(string)` and `on_error(string)`. NO `on_done`
+    method — final `InsightsOutput` is the future's return value per
+    AR-2 §Decision 1.
+  AC-7: >-
+    PASS — `InsightsOutput` UDL dictionary (torven_core.udl:175) has
+    string headline, sequence<InsightItem> insights, string recommendation,
+    f64 cost_usd, i64 latency_ms, string prompt_version. Matches Rust
+    struct in schema.rs:124.
+  AC-8: >-
+    PASS — `crates/torven-core/src/runtime.rs` uses
+    `OnceCell<Runtime>` with `tokio::runtime::Builder::new_current_thread()
+    .enable_all().thread_name("torven-tokio").build()`. Returns
+    `&'static Runtime`. `Runtime::shutdown_timeout` deferred to v1.0+ per
+    module doc. Unit tests verify same-instance + can-run-task.
+  AC-9: >-
+    PASS — `crates/torven-core/tests/insights_e2e.rs` has all 3 required
+    tests: test_insights_with_mock (validates streaming + final
+    InsightsOutput value), test_budget_exceeded (huge_ctx triggers
+    InputBudgetExceeded), test_privacy_no_api_keys (forbidden-substring
+    scan on serialized payload). All 3 pass.
+  AC-10: >-
+    PASS — `CancelHandle` (insights/cancel.rs:39) wraps
+    `tokio_util::sync::CancellationToken`. Surface: `new() -> Self`,
+    `cancel(&self)`, `is_cancelled(&self) -> bool`, plus
+    `new_arc() -> Arc<Self>` helper and crate-private `token() ->
+    CancellationToken`. `RealAnthropicClient::request_insight_streaming`
+    races HTTP chunks with `tokio::select! { biased; _ = token.cancelled()
+    => return Err(Cancelled), chunk = stream.next() => ... }` (client.rs
+    :172, :201). UDL declares `interface CancelHandle { constructor;
+    cancel; is_cancelled; }` and `[Async] InsightsClient.
+    request_insight_streaming(InsightsContext, InsightsCallback,
+    CancelHandle) -> InsightsOutput`. AR-2 spike validates p99 cancel
+    latency = 343µs (200× headroom under 100ms ceiling).
+
+ar2_spike:
+  status: GREEN
+  command: 'cargo test -p torven-core --test ar2_async_ffi_spike -- --ignored --nocapture --test-threads=1'
+  duration_s: 330.43
+  cycles: 1000
+  happy_cycles: 100
+  cancel_latency:
+    p50_us: 144.042
+    p99_us: 343.208
+    max_us: 557.459
+    ceiling_ms: 100
+  memory:
+    samples_bytes: [12484608, 12484608, 12484608]
+    delta_bytes: 0
+    ceiling_mib: 5
+  callbacks_after_cancel: 0
+  happy_path: '100/100 OK, each emitted >= 1 token, prompt_version=v1'
+  assertions_pass: '5/5'
+
+tests_count:
+  workspace_total: 178
+  torven_core_lib: 148
+  insights_e2e: 3
+  anthropic_e2e: 18
+  history_e2e: 4
+  config_tests: 18
+  keychain_e2e: 2
+  ar2_spike_ignored: 3
+  live_ignored: 4
+  torven_tui_lib: 29
+
+build_gate:
+  cargo_build: 'green'
+  cargo_test_workspace: 'green (178 passing, 8 ignored)'
+  cargo_clippy: 'green (no warnings, all-targets, -D warnings)'
+  cargo_fmt: 'green (--check --all)'
+  cargo_machete: 'green (no unused deps)'
+
+issues: []
+
+verdicts_required_for_next_step:
+  if_pass: '@devops *create-pr — story ready to merge after Wave 1 progression check'
+  if_concerns: 'n/a'
+  if_fail: 'n/a'
+
+next_step: '@devops *create-pr (branch feature/wave1-story-1.15-ai-insights-core, HEAD 09f5941)'
+
+notes_for_devops:
+  - >-
+    Story moves InReview → Done on this gate.
+  - >-
+    The AR-2 spike is `#[ignore]`'d in normal test runs (correct, per Story
+    1.5 precedent). CI matrix should add a "spike" job that runs the
+    `--ignored` tests on x86_64 + aarch64 macOS pre-merge (T9 spike doc
+    §"Definition of spike DONE" requires both arches). Wave 1 close
+    checklist owns this; not a blocker for this story.
+  - >-
+    Wave 1 progression: Stories 1.13, 1.20, 1.15 now complete. Sequence
+    permits 1.15 → push → PR → merge.
