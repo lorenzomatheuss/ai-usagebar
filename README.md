@@ -335,6 +335,46 @@ If your module doesn't use `signal: 13`, the signal is a no-op and the bar will 
 - Auto-merges with the active Omarchy theme at `~/.config/omarchy/current/theme/colors.toml`.
 - Per-color overrides: `--color-low`, `--color-mid`, `--color-high`, `--color-critical` (claudebar-compatible).
 
+## AI Insights Quality
+
+Torven ships with a deterministic eval pipeline so the AI Insights feature
+is engineering, not marketing. The eval runner lives in `torven-core` and
+scores LLM outputs against a labeled 30-case dataset.
+
+### Baseline metrics (2026-06-04, `MockLlmClient::for_eval`)
+
+| Metric | Score | Target | Status |
+|--------|-------|--------|--------|
+| Faithfulness | 0.90 | >= 0.85 | PASS |
+| Relevance | 1.00 | >= 0.80 | PASS |
+| Cost p50 | $0.0017 | <= $0.05 | PASS |
+| Cost p95 | $0.0017 | <= $0.05 | PASS |
+
+29 / 30 cases passed. See [`crates/torven-core/evals/dataset.jsonl`](crates/torven-core/evals/dataset.jsonl)
+(10 trend / 8 anomaly / 7 budget_risk / 5 optimization_opportunity; 15 info /
+10 warning / 5 critical) and [`crates/torven-core/evals/schema.md`](crates/torven-core/evals/schema.md)
+for metric definitions.
+
+### Run the evals
+
+```bash
+# Default — uses MockLlmClient::for_eval (deterministic, free)
+cargo run -p torven-core --bin torven-evals -- \
+  --dataset crates/torven-core/evals/dataset.jsonl
+
+# Save the Markdown report
+cargo run -p torven-core --bin torven-evals -- \
+  --dataset crates/torven-core/evals/dataset.jsonl \
+  --output crates/torven-core/evals/results/report-$(date +%F).md
+
+# Run against the real Anthropic API (requires ANTHROPIC_API_KEY)
+cargo run -p torven-core --bin torven-evals -- --real-llm
+```
+
+The runner is plain Rust, so it runs in CI without webkit2gtk or
+cross-compilation overhead. Story 1.21 wires this into the CI gate to
+block merges on >5% regression of faithfulness or relevance.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history. Each release also has its own page at <https://github.com/lorenzomatheuss/torven/releases> with the auto-generated install snippet and checksum.

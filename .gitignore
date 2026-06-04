@@ -15,6 +15,11 @@
 # Snapshot review files from `cargo insta`
 *.snap.new
 
+# Story 1.17 — eval runner output. The dataset (evals/dataset.jsonl) IS
+# tracked; only generated report directories are ignored.
+crates/torven-core/evals/results/
+evals/results/
+
 # makepkg build outputs (kept out of the source repo)
 packaging/aur/pkg/
 packaging/aur/src/
