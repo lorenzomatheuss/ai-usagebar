@@ -39,7 +39,7 @@ Estas 11 stories podem ser iniciadas **antes** da UX spec estar pronta. São o f
 | 1.13 | History SQLite layer no torven-core + FFI helpers | In Review | SEQ após 1.4 |
 | 1.15 | AI Insights core: Anthropic client + tool_use + streaming callback | Ready | SEQ após 1.13 |
 | 1.17 | Eval runner bin (torven-evals) + dataset 30 casos rotulados | Ready | PAR com 1.15 (após 1.13) |
-| 1.20 | Keychain migration: TOML api_keys → macOS Keychain via security-framework | Ready | SEQ após 1.6 |
+| 1.20 | Keychain migration: TOML api_keys → macOS Keychain via security-framework | In Review | SEQ após 1.6 |
 | 1.26 | CI baseline: cargo test + clippy + cargo machete + xcodebuild scaffold | Done (CONCERNS) | PAR (após 1.1) |
 
 ### Grupo 2 — UI + SwiftUI (aguardam UX spec — NÃO criar ainda)
