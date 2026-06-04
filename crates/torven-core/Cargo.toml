@@ -65,6 +65,9 @@ toml_edit = "0.22"
 # Only the macros are pulled in here; the consuming binary (TUI or macOS app)
 # is responsible for wiring up a subscriber.
 tracing = "0.1"
+# Story 1.17 — `clap` powers the `torven-evals` binary CLI surface
+# (`--dataset`, `--output`, `--real-llm`). Already in [dependencies] (not
+# dev-dependencies) so the eval binary is part of the publishable crate.
 clap = { version = "4", features = ["derive", "env"] }
 chrono = { version = "0.4", features = ["serde"] }
 fs2 = "0.4"

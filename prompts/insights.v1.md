@@ -3,7 +3,21 @@ version: v1
 created_at: 2026-05-31
 author: "@pm + @sm"
 superseded_by: null
-eval_baseline_score: null  # filled in by Story 1.17 eval runner
+# Filled in by Story 1.17 eval runner (MockLlmClient::for_eval pass on
+# 2026-06-04). Real-LLM baseline will be re-recorded in Story 1.21 once the
+# CI gate runs against ANTHROPIC_API_KEY-equipped runners.
+eval_baseline_score:
+  date: 2026-06-04
+  llm: mock
+  dataset_size: 30
+  faithfulness: 0.90
+  relevance: 1.00
+  latency_p50_ms: 0
+  latency_p95_ms: 0
+  cost_p50_usd: 0.0017
+  cost_p95_usd: 0.0017
+  passed: 29
+  failed: 1
 ---
 
 # Insights Prompt — v1
