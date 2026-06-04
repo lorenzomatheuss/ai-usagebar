@@ -36,10 +36,10 @@ Estas 11 stories podem ser iniciadas **antes** da UX spec estar pronta. São o f
 | 1.4 | Migrate format.rs para RawMetrics + extrair torven-core lib | Done | SEQ após 1.3 |
 | 1.5 | First FFI bridge: get_vendor_list() + consumir em Swift skeleton | Done | SEQ após 1.2 + 1.4 |
 | 1.6 | Config migration para Vec<Account> shape (FR-6 multi-account schema) | Done | PAR com 1.5 (após 1.4) |
-| 1.13 | History SQLite layer no torven-core + FFI helpers | In Review | SEQ após 1.4 |
+| 1.13 | History SQLite layer no torven-core + FFI helpers | Done | SEQ após 1.4 |
 | 1.15 | AI Insights core: Anthropic client + tool_use + streaming callback | Ready | SEQ após 1.13 |
 | 1.17 | Eval runner bin (torven-evals) + dataset 30 casos rotulados | Ready | PAR com 1.15 (após 1.13) |
-| 1.20 | Keychain migration: TOML api_keys → macOS Keychain via security-framework | In Review | SEQ após 1.6 |
+| 1.20 | Keychain migration: TOML api_keys → macOS Keychain via security-framework | Done | SEQ após 1.6 |
 | 1.26 | CI baseline: cargo test + clippy + cargo machete + xcodebuild scaffold | Done (CONCERNS) | PAR (após 1.1) |
 
 ### Grupo 2 — UI + SwiftUI (aguardam UX spec — NÃO criar ainda)
