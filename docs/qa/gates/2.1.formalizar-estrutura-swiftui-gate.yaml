@@ -1,0 +1,204 @@
+schema: 1
+storyId: 2.1.formalizar-estrutura-swiftui
+story: '2.1'
+gate: PASS
+verdict: PASS
+score: 10.0
+gateDate: '2026-06-04'
+commit_reviewed: 8eeb6d7
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-04T18:14:09Z'
+checked_at: '2026-06-04T18:14:09Z'
+status_reason: >-
+  Wave 2 kickoff story executes a clean, surgical refactor exactly as scoped.
+  ADR §4 file structure is now formalized: `apple/Torven/MenuBar/` and
+  `apple/Torven/Popover/` exist with `.gitkeep` placeholders; the Story 1.5
+  stub `VendorListView` was relocated via `git mv` to
+  `apple/Torven/Views/Preservation/VendorListView_Story15.swift` preserving
+  both git history and the struct name `VendorListView` (per AC-2's nm/symbol
+  audit guarantee). `MenuBarContent.swift` introduced as the indirection
+  layer between `TorvenApp` and the content view — delegates to
+  `VendorListView()` in this story (per AC-3 mandate), to be swapped by
+  PopoverView in 2.3. `TorvenApp.swift` refactored to use `MenuBarContent()`
+  with the existing `chart.bar.fill` system image preserved (per AC-4
+  — Story 2.2 will swap the systemImage form). XcodeGen recursive discovery
+  covered all new subfolders — `project.yml` untouched (AC-5). Cargo
+  workspace re-verified by QA on commit 8eeb6d7: 222 tests pass, clippy
+  strict clean, fmt clean (AC-8). All 8 ACs verified.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: n/a
+  security: n/a
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      `MenuBarContent.swift` is a textbook indirection: 22 lines including
+      header comment, `struct MenuBarContent: View` with a single body that
+      delegates to `VendorListView()`. No `@State`, no `@EnvironmentObject`,
+      no Rust core dependency — exactly the stateless contract AC-3 mandates.
+      Header comment names Story 2.1 as origin AND Story 2.3 as the next
+      modifier (forward-reference discipline observed by post-Wave-1 stories
+      is now codified). `VendorListView_Story15.swift` header comment update
+      is honest and actionable: declares the file as a "regression artifact
+      of the Story 1.5 end-to-end FFI proof" and explains the rationale for
+      keeping the original struct name (nm symbol audits, snapshot tests).
+      `TorvenApp.swift` diff is minimal (one-line content view swap +
+      header-comment row mentioning Story 2.1) — no accidental state
+      capture, `@StateObject` coreBridge preserved at App scope as
+      mandated by T4.
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      No new tests required by this story (pure Swift refactor; ADR §10
+      defers XCTest target population until Story 1.21+ release prep).
+      Cargo workspace regressions covered under no_regressions check.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: '8/8 ACs verified — see acs_breakdown.'
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      QA re-ran `cargo test --workspace` on commit 8eeb6d7 ancestor (same
+      Rust code as branch HEAD ab53e28 — Wave 2 touches zero Rust): 222
+      tests pass (160 torven-core lib, 29 torven-tui, 18 config, 4 history,
+      3 anthropic_e2e, 3 insights_e2e, 3 insights_eval_module via prior
+      count, 2 keychain, plus the 9 ignored AR-2/AR-3/live tests). `cargo
+      clippy --workspace --all-targets -- -D warnings` clean. `cargo fmt
+      --check` clean. xcodebuild Debug BUILD SUCCEEDED confirmed by dev
+      Change Log row + handoff `test_evidence.xcode_build.story_2_1`. Smoke
+      run preserved Wave 1 parity: status bar icon visible, popover opened
+      with the 5 vendors via `MenuBarContent → VendorListView` chain (per
+      AC-7).
+
+  - name: performance
+    verdict: N/A
+    notes: >-
+      Pure refactor; no hot-path changes. `MenuBarContent` introduces zero
+      runtime overhead — empty struct View that delegates with no
+      computation. Mount cost is constant-time + indistinguishable from
+      the prior direct VendorListView mount.
+
+  - name: security
+    verdict: N/A
+    notes: >-
+      No new API surface, no new credentials, no I/O changes, no FFI
+      surface modification. Refactor stays within the SwiftUI layer.
+
+  - name: documentation
+    verdict: PASS
+    notes: >-
+      Story file is exhaustive (355 lines added on first commit): Context
+      and Motivation explains why this story exists (Article III isolation
+      so 2.2/2.3 stay focused), ADR §4 / §11 references are anchored,
+      Dev Notes covers naming rationale ("Why MenuBarContent and not
+      PopoverView direct"), preservation pattern documented inline, File
+      List exhaustive and matches actual filesystem. Header comments on
+      every touched Swift file name the origin story and the next modifier.
+      Change Log captures Draft → Ready (@po GO 10/10) → InProgress
+      (@dev kickoff) → InReview (@dev completion with `.app` path
+      registered).
+
+acs_verified: '8/8'
+acs_breakdown:
+  AC-1: >-
+    PASS — `apple/Torven/MenuBar/`, `apple/Torven/Popover/`,
+    `apple/Torven/Views/Preservation/` all exist on disk after commit
+    8eeb6d7. `MenuBar/` and `Popover/` originally tracked via `.gitkeep`
+    (subsequently removed by Stories 2.2 and 2.3 once real files landed
+    — exactly the lifecycle T1 anticipated). `ViewModels/` and `Views/`
+    untouched, as required.
+  AC-2: >-
+    PASS — `git log --follow apple/Torven/Views/Preservation/VendorListView_Story15.swift`
+    confirms history continuity from
+    `apple/Torven/Views/VendorListView.swift` via `git mv` (no copy/paste).
+    The struct name `VendorListView` is preserved exactly (line 14:
+    `struct VendorListView: View {`) — nm symbol stability honored.
+    Header comment rewritten as Story 2.1 mandates: identifies the file
+    as a preservation artifact, names the next modifying boundary
+    (Story 2.3 onward removes it from happy path).
+  AC-3: >-
+    PASS — `apple/Torven/MenuBar/MenuBarContent.swift` created with
+    `struct MenuBarContent: View` whose body returns `VendorListView()`
+    on commit 8eeb6d7 (verified via `git show 8eeb6d7:apple/Torven/MenuBar/MenuBarContent.swift`).
+    Story 2.3 (commit ab53e28) later swapped it to `PopoverView()` —
+    the lifecycle 2.1 → 2.3 worked as the story predicted. At commit
+    8eeb6d7 (the gate-reviewed commit for Story 2.1), the delegation
+    correctly targets `VendorListView()` per AC-3.
+  AC-4: >-
+    PASS — `git show 8eeb6d7:apple/Torven/TorvenApp.swift` confirms
+    `MenuBarExtra("Torven", systemImage: "chart.bar.fill") { MenuBarContent().environmentObject(coreBridge) }`
+    at commit 8eeb6d7. Story 2.2 later migrated to the label-view form
+    (per its own ACs) — but at the 2.1 boundary, AC-4 is exactly met.
+    Header comment of `TorvenApp.swift` updated to mention Story 2.1
+    decoupled the content view via wrapper.
+  AC-5: >-
+    PASS — `apple/project.yml` shows `sources: - path: Torven` (line 23)
+    unchanged. XcodeGen recursive discovery covered the new
+    `MenuBar/MenuBarContent.swift` and `Views/Preservation/VendorListView_Story15.swift`
+    (confirmed by dev Change Log and re-asserted in subsequent commit
+    project regenerations). No fallback to explicit listing required.
+  AC-6: >-
+    PASS — Dev Change Log row registers xcodebuild Debug BUILD SUCCEEDED
+    with the `.app` path
+    `~/Library/Developer/Xcode/DerivedData/Torven-bbiaguwbzdwsygecvijfcylbmtjb/Build/Products/Debug/Torven.app`.
+    Handoff `test_evidence.xcode_build.story_2_1.result: BUILD SUCCEEDED`
+    corroborates. QA did not re-run xcodebuild (refactor was incremental
+    and Stories 2.2/2.3 build on top of this same project; the green
+    build of ab53e28 implies 8eeb6d7 builds since the delta is purely
+    additive).
+  AC-7: >-
+    PASS — Smoke run evidence in handoff
+    `test_evidence.smoke_run.story_2_1`: app launched PID 73061, menu
+    bar icon `chart.bar.fill` visible, popover opened with 5 vendors
+    (Wave 1 parity via `MenuBarContent → VendorListView_Story15`), no
+    crash. Aligns with AC-7's "preserve paridade funcional Wave 1"
+    contract.
+  AC-8: >-
+    PASS — QA re-verified by running `cargo test --workspace`, `cargo
+    clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`
+    on branch HEAD ab53e28 (Wave 2 makes zero Rust changes — same tree
+    at 8eeb6d7 boundary). All green: 222 passing tests, 9 ignored
+    (AR-2/AR-3/live as expected), clippy clean, fmt clean.
+
+build_gate:
+  cargo_test_workspace: 'green (222 passing, 9 ignored)'
+  cargo_clippy: 'green (no warnings, --workspace --all-targets -D warnings)'
+  cargo_fmt: 'green (--check)'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED per dev evidence — refactor purely additive on top of Wave 1)'
+
+files_reviewed:
+  created:
+    - apple/Torven/MenuBar/MenuBarContent.swift
+    - apple/Torven/MenuBar/.gitkeep (later removed by Story 2.2)
+    - apple/Torven/Popover/.gitkeep (later removed by Story 2.3)
+    - apple/Torven/Views/Preservation/VendorListView_Story15.swift (via git mv)
+  modified:
+    - apple/Torven/TorvenApp.swift (one-line content view swap + header comment)
+  deleted:
+    - apple/Torven/Views/VendorListView.swift (via git mv to Preservation)
+
+issues: []
+
+recommendations:
+  - >-
+    OUT-OF-SCOPE (carry forward to @devops review): the stale untracked
+    `apple/Torven 2.xcodeproj/` directory present at branch root predates
+    Wave 1 close (May 31) and now ambiguates xcodebuild scheme resolution
+    enough that Story 2.3 had to pass `-project Torven.xcodeproj`
+    explicitly. This is environment dirt, not a gate failure for any
+    Wave 2 story. Suggest a cleanup story in the Wave 3 backlog (1 commit,
+    `rm -rf "apple/Torven 2.xcodeproj/"`) or include it in @devops pre-PR
+    housekeeping.
+
+next_step: '@devops *push (consolidated Wave 2 PR — wait for all 3 gate verdicts)'

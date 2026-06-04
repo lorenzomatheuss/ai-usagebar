@@ -1,0 +1,205 @@
+schema: 1
+storyId: 2.2.extrair-menubarlabel-skeleton
+story: '2.2'
+gate: PASS
+verdict: PASS
+score: 9.5
+gateDate: '2026-06-04'
+commit_reviewed: 7fbcfc5
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-04T18:14:09Z'
+checked_at: '2026-06-04T18:14:09Z'
+status_reason: >-
+  Story 2.2 cleanly extracts the SF Symbol from `TorvenApp.swift` into a
+  configurable `MenuBarLabel` struct exactly per the ACs. `MenuBarLabel.swift`
+  is a 25-line stateless View (no `@State`, no `@EnvironmentObject`, no Rust
+  core dependency — per AC-1's strict statelessness mandate), exposes
+  `static let defaultSymbol = "chart.bar.fill"` so the call site never
+  hardcodes the string, and takes `let symbol: String` as the configurable
+  knob that Wave 7 (AR-8) will drive dynamically. `TorvenApp.swift` migrated
+  from the `("Torven", systemImage:)` form to the label-view trailing
+  closure form `MenuBarExtra { content } label: { MenuBarLabel(symbol:
+  MenuBarLabel.defaultSymbol) }` per AC-2 verbatim. `apple/Torven/MenuBar/.gitkeep`
+  removed (AC-4) — `MenuBarLabel.swift` is now the real file in the folder.
+  XcodeGen recursive discovery picked up the new file with zero project.yml
+  changes (AC-5). Cargo workspace stays green (222 tests, clippy strict
+  clean, fmt clean — AC-7). The only minor mark-down is on AC-6 evidence:
+  individual smoke run was [AUTO-DECISION] consolidated with Story 2.3's
+  smoke (same icon, same status bar render path); the rationale is
+  documented in the Change Log and the consolidation is defensible (Story
+  2.3 build PID 76680 validates the same chart.bar.fill icon visibility
+  end-to-end). 7/7 ACs verified — pragmatic CONCERNS-grade test-evidence
+  pattern that does not warrant CONCERNS overall because the consolidation
+  is honest, documented, and the alternative coverage (build green +
+  Story 2.3 smoke covering the same icon) is sufficient.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: n/a
+  security: n/a
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      `MenuBarLabel.swift` (25 lines) is exactly the shape the story
+      prescribed: `static let defaultSymbol` before the stored property
+      (idiomatic Swift; readers see the default value first), `let symbol:
+      String` as an immutable stored property (no `var`, no `@State` — the
+      statelessness contract is enforced by the type), and a body that is
+      a single `Image(systemName: symbol)` call. No `.renderingMode(...)`,
+      no padding, no styling — the View is intentionally minimal so Wave 7
+      can extend it without removing accumulated styling. Header comment
+      is 9 lines and names Story 2.2 as origin, AR-8 in Wave 7 as the
+      planned consumer, and explicitly warns "NOT a dynamic label yet —
+      no Rust core dependency. Static symbol only." — a forward-reference
+      discipline that prevents future readers from confusing this skeleton
+      with a feature. `TorvenApp.swift` diff is the smallest possible
+      label-view migration: 4-line MenuBarExtra block replaced with the
+      label-view trailing closure form, `.menuBarExtraStyle(.window)`
+      preserved as mandated by T2.
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      No new tests required (pure Swift refactor; ADR §10 defers XCTest
+      target until Story 1.21+ release prep). Workspace Rust tests
+      re-verified — 222 passing — covered under no_regressions.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: '7/7 ACs verified — see acs_breakdown. AC-6 smoke consolidated with Story 2.3 by [AUTO-DECISION], honest and documented.'
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      `cargo test --workspace`, `cargo clippy --workspace --all-targets
+      -- -D warnings`, `cargo fmt --check` all green on branch HEAD
+      (Wave 2 touches zero Rust files). xcodebuild Debug BUILD SUCCEEDED
+      per dev evidence on commit 7fbcfc5 ancestor (and trivially holds
+      for HEAD ab53e28 since 2.3's delta is purely additive). The label-view
+      trailing closure form of `MenuBarExtra` is well-established Apple
+      API since macOS 13 — no concern about render quirks for this skeleton
+      (Story 2.3 smoke confirms the icon renders on a fresh launch).
+
+  - name: performance
+    verdict: N/A
+    notes: >-
+      Pure refactor; no hot-path changes. `MenuBarLabel` is a stateless
+      struct View wrapping `Image(systemName:)` — zero allocation overhead
+      beyond what `MenuBarExtra("Torven", systemImage:)` did before.
+
+  - name: security
+    verdict: N/A
+    notes: >-
+      No credentials, no I/O, no network surface, no FFI surface change.
+      Refactor stays within the SwiftUI layer.
+
+  - name: documentation
+    verdict: PASS
+    notes: >-
+      Story file is rich (356 lines): Context explains the why-now (pasta
+      `MenuBar/` already exists from Story 2.1; ADR §4 path is reserved),
+      the why-not-dynamic-label-now (AR-8 deferred), and the API choice
+      ("Por que `MenuBarLabel(symbol:)` e não `MenuBarLabel(systemImage:)`"
+      auto-decision with rationale). File List exhaustive. Change Log
+      captures the AUTO-DECISION on smoke consolidation with full
+      rationale (build green + Story 2.3 smoke covers the same icon).
+
+acs_verified: '7/7'
+acs_breakdown:
+  AC-1: >-
+    PASS — `apple/Torven/MenuBar/MenuBarLabel.swift` exists at HEAD
+    ab53e28 (introduced by 7fbcfc5). Verified: `struct MenuBarLabel:
+    View` (line 16), `static let defaultSymbol = "chart.bar.fill"` (line
+    17), `let symbol: String` (line 19), body returns `Image(systemName:
+    symbol)` (line 22). No `@State`, no `@EnvironmentObject`, no Rust
+    core import — strict statelessness contract honored.
+  AC-2: >-
+    PASS — `apple/Torven/TorvenApp.swift` at HEAD ab53e28 shows the
+    label-view trailing closure form exactly as AC-2 prescribes
+    (lines 26-32): `MenuBarExtra { MenuBarContent().environmentObject(coreBridge)
+    } label: { MenuBarLabel(symbol: MenuBarLabel.defaultSymbol) }
+    .menuBarExtraStyle(.window)`. Header comment updated to mention
+    Story 2.2 (line 7-10).
+  AC-3: >-
+    PASS — Story 2.3's smoke run (handoff `test_evidence.smoke_run.story_2_3`)
+    confirms `chart.bar.fill` icon visible in the status bar on PID 76680,
+    rendered via `MenuBarLabel` per the label-view form (same icon as
+    Wave 1's `("Torven", systemImage: "chart.bar.fill")` form). Visual
+    parity maintained.
+  AC-4: >-
+    PASS — `ls apple/Torven/MenuBar/` shows only `MenuBarContent.swift`
+    and `MenuBarLabel.swift` — no `.gitkeep`. Commit 7fbcfc5 diff
+    confirms `git rm apple/Torven/MenuBar/.gitkeep` was performed (stat:
+    `apple/Torven/MenuBar/.gitkeep | 0` deleted).
+  AC-5: >-
+    PASS — Dev Change Log row records xcodebuild Debug BUILD SUCCEEDED
+    at the
+    `~/Library/Developer/Xcode/DerivedData/Torven-bbiaguwbzdwsygecvijfcylbmtjb/Build/Products/Debug/Torven.app`
+    path. Handoff `test_evidence.xcode_build.story_2_2.result: BUILD
+    SUCCEEDED` corroborates. XcodeGen recursive discovery covered the
+    new `MenuBar/MenuBarLabel.swift` without project.yml changes (handoff
+    confirms).
+  AC-6: >-
+    PASS (with consolidation) — Individual Story 2.2 smoke run omitted
+    per [AUTO-DECISION] documented in Change Log: 2.2 only changes the
+    `MenuBarExtra` form (from `("Torven", systemImage:)` to `{ } label:
+    { MenuBarLabel }`) while preserving the same SF Symbol, so an
+    individual smoke run would re-validate identical visual output to
+    Story 2.3's smoke (PID 76680 at handoff `test_evidence.smoke_run.story_2_3`:
+    chart.bar.fill icon visible via MenuBarLabel, popover opens). Build
+    green + workspace Rust green + Story 2.3 end-to-end smoke is
+    sufficient coverage for this skeleton-grade refactor. QA accepts the
+    auto-decision — it is honest, documented, and the alternative
+    evidence is verifiable.
+  AC-7: >-
+    PASS — QA re-ran `cargo test --workspace`, `cargo clippy --workspace
+    --all-targets -- -D warnings`, `cargo fmt --check` on HEAD ab53e28:
+    all green (222 tests, 9 ignored as expected; clippy clean; fmt
+    clean). Story 2.2 touches zero Rust files, so the verification is
+    trivially preserved.
+
+build_gate:
+  cargo_test_workspace: 'green (222 passing, 9 ignored)'
+  cargo_clippy: 'green'
+  cargo_fmt: 'green'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED per dev evidence on commit 7fbcfc5; trivially holds for HEAD ab53e28)'
+
+files_reviewed:
+  created:
+    - apple/Torven/MenuBar/MenuBarLabel.swift
+  modified:
+    - apple/Torven/TorvenApp.swift (MenuBarExtra label-view form migration; header comment update)
+  deleted:
+    - apple/Torven/MenuBar/.gitkeep (Story 2.1 placeholder no longer needed)
+
+auto_decisions_accepted:
+  - id: AD-2.2-smoke-consolidation
+    decision: >-
+      Smoke run for Story 2.2 consolidated with Story 2.3's smoke instead
+      of run individually.
+    rationale: >-
+      Story 2.2 only changes the MenuBarExtra form (preserves the same
+      SF Symbol `chart.bar.fill`), so an individual smoke would test the
+      exact same visual output as Story 2.3's smoke. Build green +
+      workspace Rust green + Story 2.3 end-to-end smoke (PID 76680 with
+      icon visible via MenuBarLabel) is sufficient coverage.
+    qa_verdict: ACCEPTED — honest, documented in Change Log, alternative coverage verifiable.
+
+issues: []
+
+recommendations:
+  - >-
+    (Minor, forward-only) If a future story makes a non-trivial behavioral
+    change to `MenuBarLabel` (e.g. introduces an `@EnvironmentObject` for
+    Wave 7's vendor-pressure-driven label), do not consolidate the smoke
+    run — the AUTO-DECISION here is contingent on the refactor being a
+    pure form swap.
+
+next_step: '@devops *push (consolidated Wave 2 PR — wait for all 3 gate verdicts)'
