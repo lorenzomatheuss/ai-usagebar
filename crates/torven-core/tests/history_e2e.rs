@@ -2,7 +2,8 @@ use std::path::Path;
 
 use chrono::Utc;
 use torven_core::history::{
-    HistoryDb, UsageSnapshot, query_snapshots, record_snapshot, run_retention_janitor,
+    AccountFilter, HistoryDb, UsageSnapshot, query_snapshots, query_snapshots_paged,
+    record_snapshot, run_retention_janitor,
 };
 
 fn open_temp_db(dir: &Path) -> HistoryDb {
@@ -52,7 +53,7 @@ fn test_record_and_query() {
     let rows = query_snapshots(
         &db,
         "openrouter",
-        Some("openrouter-acme"),
+        AccountFilter::Specific("openrouter-acme"),
         base_ts,
         base_ts + 2_000,
     )
@@ -66,6 +67,70 @@ fn test_record_and_query() {
     assert_eq!(rows[0].tokens_used, Some(12_345));
     assert_eq!(rows[0].pct_used, Some(0.67));
     assert_eq!(rows[0].metric_kind, "usd_spent");
+
+    let all = query_snapshots(
+        &db,
+        "openrouter",
+        AccountFilter::All,
+        base_ts,
+        base_ts + 3_000,
+    )
+    .expect("query all account snapshots");
+    assert_eq!(all.len(), 4);
+
+    record_snapshot(&db, &snapshot("openrouter", None, base_ts + 4_000))
+        .expect("record null-account snapshot");
+    let null_only = query_snapshots(
+        &db,
+        "openrouter",
+        AccountFilter::Null,
+        base_ts,
+        base_ts + 4_000,
+    )
+    .expect("query null-account snapshots");
+    assert_eq!(null_only.len(), 1);
+    assert!(null_only[0].account_id.is_none());
+}
+
+#[test]
+fn test_query_pagination() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let db = open_temp_db(tempdir.path());
+    let base_ts = 1_700_000_000_000;
+
+    for i in 0..3 {
+        record_snapshot(
+            &db,
+            &snapshot("openrouter", Some("openrouter-acme"), base_ts + i * 1_000),
+        )
+        .expect("record paginated snapshot");
+    }
+
+    let first_page = query_snapshots_paged(
+        &db,
+        "openrouter",
+        AccountFilter::Specific("openrouter-acme"),
+        base_ts,
+        base_ts + 3_000,
+        2,
+        None,
+    )
+    .expect("first page");
+    assert_eq!(first_page.items.len(), 2);
+    assert_eq!(first_page.next_cursor.as_deref(), Some("2"));
+
+    let second_page = query_snapshots_paged(
+        &db,
+        "openrouter",
+        AccountFilter::Specific("openrouter-acme"),
+        base_ts,
+        base_ts + 3_000,
+        2,
+        first_page.next_cursor.as_deref(),
+    )
+    .expect("second page");
+    assert_eq!(second_page.items.len(), 1);
+    assert!(second_page.next_cursor.is_none());
 }
 
 #[test]
@@ -85,12 +150,24 @@ fn test_retention_janitor() {
     let deleted = run_retention_janitor(&db, 90).expect("retention janitor");
     assert_eq!(deleted, 1);
 
-    let remaining = query_snapshots(&db, "zai", Some("zai-recent"), now - 180 * day_ms, now)
-        .expect("query recent account");
+    let remaining = query_snapshots(
+        &db,
+        "zai",
+        AccountFilter::Specific("zai-recent"),
+        now - 180 * day_ms,
+        now,
+    )
+    .expect("query recent account");
     assert_eq!(remaining.len(), 1);
 
-    let old = query_snapshots(&db, "zai", Some("zai-old"), now - 180 * day_ms, now)
-        .expect("query old account");
+    let old = query_snapshots(
+        &db,
+        "zai",
+        AccountFilter::Specific("zai-old"),
+        now - 180 * day_ms,
+        now,
+    )
+    .expect("query old account");
     assert!(old.is_empty());
 }
 
@@ -104,7 +181,13 @@ fn test_migration_idempotent() {
 
     record_snapshot(&db, &snapshot("anthropic", None, 1_700_000_000_000))
         .expect("record after idempotent migrations");
-    let rows = query_snapshots(&db, "anthropic", None, 1_699_999_999_999, 1_700_000_000_001)
-        .expect("query after idempotent migrations");
+    let rows = query_snapshots(
+        &db,
+        "anthropic",
+        AccountFilter::Null,
+        1_699_999_999_999,
+        1_700_000_000_001,
+    )
+    .expect("query after idempotent migrations");
     assert_eq!(rows.len(), 1);
 }

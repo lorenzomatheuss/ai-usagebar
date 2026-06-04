@@ -82,6 +82,27 @@ dictionary HistorySnapshot {
     string metric_kind;
 };
 
+dictionary UsageSnapshotInput {
+    string vendor;
+    string? account_id;
+    i64 ts;
+    f64? cost_usd;
+    i64? tokens_used;
+    f64? pct_used;
+    string metric_kind;
+};
+
+dictionary PagedHistorySnapshots {
+    sequence<HistorySnapshot> items;
+    string? next_cursor;
+};
+
+enum HistoryAccountFilterMode {
+    "All",
+    "Null",
+    "Specific",
+};
+
 enum HistoryFfiError {
     "NotInitialized",
     "Storage",
@@ -116,15 +137,18 @@ namespace torven_core {
     void ffi_init_history(string? db_path);
 
     [Throws=HistoryFfiError]
-    sequence<HistorySnapshot> ffi_query_snapshots(
+    PagedHistorySnapshots ffi_query_snapshots(
         string vendor,
+        HistoryAccountFilterMode account_filter_mode,
         string? account_id,
         i64 since_ts,
-        i64 until_ts
+        i64 until_ts,
+        i64 limit,
+        string? cursor
     );
 
     [Throws=HistoryFfiError]
-    void ffi_record_snapshot(HistorySnapshot snapshot);
+    i64 ffi_record_snapshot(UsageSnapshotInput snapshot);
 
     [Throws=HistoryFfiError]
     void ffi_run_retention_janitor(u32 retention_days);

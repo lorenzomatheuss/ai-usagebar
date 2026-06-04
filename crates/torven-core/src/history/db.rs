@@ -14,7 +14,10 @@ pub struct HistoryDb {
 
 impl HistoryDb {
     pub fn open(path: &Path) -> Result<Self, HistoryError> {
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
             std::fs::create_dir_all(parent).map_err(|source| HistoryError::Io {
                 path: parent.to_path_buf(),
                 source,

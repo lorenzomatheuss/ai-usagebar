@@ -35,6 +35,12 @@ pub enum HistoryError {
 
     #[error("could not resolve home directory for default history database path")]
     HomeDirUnavailable,
+
+    #[error("invalid history pagination cursor: {0}")]
+    InvalidCursor(String),
+
+    #[error("invalid history account filter: {0}")]
+    InvalidAccountFilter(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,6 +65,19 @@ pub struct HistorySnapshot {
     pub tokens_used: Option<i64>,
     pub pct_used: Option<f64>,
     pub metric_kind: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountFilter<'a> {
+    All,
+    Null,
+    Specific(&'a str),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PagedHistorySnapshots {
+    pub items: Vec<HistorySnapshot>,
+    pub next_cursor: Option<String>,
 }
 
 pub fn record_snapshot(db: &HistoryDb, snapshot: &UsageSnapshot) -> Result<i64, HistoryError> {
@@ -95,16 +114,41 @@ pub fn record_snapshot(db: &HistoryDb, snapshot: &UsageSnapshot) -> Result<i64, 
 pub fn query_snapshots(
     db: &HistoryDb,
     vendor: &str,
-    account_id: Option<&str>,
+    account_filter: AccountFilter<'_>,
     since_ts: i64,
     until_ts: i64,
 ) -> Result<Vec<HistorySnapshot>, HistoryError> {
-    let conn = db.connection()?;
+    Ok(query_snapshots_paged(
+        db,
+        vendor,
+        account_filter,
+        since_ts,
+        until_ts,
+        i64::MAX,
+        None,
+    )?
+    .items)
+}
 
-    if let Some(account_id) = account_id {
-        let mut stmt = conn
-            .prepare(
-                "
+pub fn query_snapshots_paged(
+    db: &HistoryDb,
+    vendor: &str,
+    account_filter: AccountFilter<'_>,
+    since_ts: i64,
+    until_ts: i64,
+    limit: i64,
+    cursor: Option<&str>,
+) -> Result<PagedHistorySnapshots, HistoryError> {
+    let conn = db.connection()?;
+    let offset = parse_cursor(cursor)?;
+    let limit = normalize_limit(limit);
+    let fetch_limit = limit + 1;
+
+    let mut items = match account_filter {
+        AccountFilter::Specific(account_id) => {
+            let mut stmt = conn
+                .prepare(
+                    "
                 SELECT id, vendor, account_id, ts, cost_usd, tokens_used, pct_used, metric_kind
                 FROM usage_snapshots
                 WHERE vendor = ?1
@@ -112,16 +156,21 @@ pub fn query_snapshots(
                   AND ts >= ?3
                   AND ts <= ?4
                 ORDER BY ts ASC, id ASC
+                LIMIT ?5 OFFSET ?6
                 ",
-            )
-            .map_err(HistoryError::Sqlite)?;
-        stmt.query_map((vendor, account_id, since_ts, until_ts), row_to_snapshot)?
+                )
+                .map_err(HistoryError::Sqlite)?;
+            stmt.query_map(
+                (vendor, account_id, since_ts, until_ts, fetch_limit, offset),
+                row_to_snapshot,
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(HistoryError::Sqlite)
-    } else {
-        let mut stmt = conn
-            .prepare(
-                "
+        }
+        AccountFilter::Null => {
+            let mut stmt = conn
+                .prepare(
+                    "
                 SELECT id, vendor, account_id, ts, cost_usd, tokens_used, pct_used, metric_kind
                 FROM usage_snapshots
                 WHERE vendor = ?1
@@ -129,13 +178,48 @@ pub fn query_snapshots(
                   AND ts >= ?2
                   AND ts <= ?3
                 ORDER BY ts ASC, id ASC
+                LIMIT ?4 OFFSET ?5
                 ",
-            )
-            .map_err(HistoryError::Sqlite)?;
-        stmt.query_map((vendor, since_ts, until_ts), row_to_snapshot)?
+                )
+                .map_err(HistoryError::Sqlite)?;
+            stmt.query_map(
+                (vendor, since_ts, until_ts, fetch_limit, offset),
+                row_to_snapshot,
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(HistoryError::Sqlite)
-    }
+        }
+        AccountFilter::All => {
+            let mut stmt = conn
+                .prepare(
+                    "
+                    SELECT id, vendor, account_id, ts, cost_usd, tokens_used, pct_used, metric_kind
+                    FROM usage_snapshots
+                    WHERE vendor = ?1
+                      AND ts >= ?2
+                      AND ts <= ?3
+                    ORDER BY ts ASC, id ASC
+                    LIMIT ?4 OFFSET ?5
+                    ",
+                )
+                .map_err(HistoryError::Sqlite)?;
+            stmt.query_map(
+                (vendor, since_ts, until_ts, fetch_limit, offset),
+                row_to_snapshot,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(HistoryError::Sqlite)
+        }
+    }?;
+
+    let next_cursor = if items.len() > limit as usize {
+        items.truncate(limit as usize);
+        Some((offset + limit).to_string())
+    } else {
+        None
+    };
+
+    Ok(PagedHistorySnapshots { items, next_cursor })
 }
 
 fn row_to_snapshot(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistorySnapshot> {
@@ -149,4 +233,19 @@ fn row_to_snapshot(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistorySnapshot>
         pct_used: row.get(6)?,
         metric_kind: row.get(7)?,
     })
+}
+
+fn normalize_limit(limit: i64) -> i64 {
+    if limit <= 0 { 100 } else { limit.min(1_000) }
+}
+
+fn parse_cursor(cursor: Option<&str>) -> Result<i64, HistoryError> {
+    let Some(cursor) = cursor else {
+        return Ok(0);
+    };
+    cursor
+        .parse::<i64>()
+        .ok()
+        .filter(|offset| *offset >= 0)
+        .ok_or_else(|| HistoryError::InvalidCursor(cursor.to_string()))
 }

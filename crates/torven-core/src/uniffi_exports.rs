@@ -32,7 +32,7 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use crate::history::{self, HistoryDb, UsageSnapshot};
+use crate::history::{self, AccountFilter, HistoryDb, UsageSnapshot};
 
 static HISTORY_DB: OnceLock<Mutex<Option<HistoryDb>>> = OnceLock::new();
 
@@ -88,6 +88,30 @@ pub struct HistorySnapshot {
     pub tokens_used: Option<i64>,
     pub pct_used: Option<f64>,
     pub metric_kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageSnapshotInput {
+    pub vendor: String,
+    pub account_id: Option<String>,
+    pub ts: i64,
+    pub cost_usd: Option<f64>,
+    pub tokens_used: Option<i64>,
+    pub pct_used: Option<f64>,
+    pub metric_kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PagedHistorySnapshots {
+    pub items: Vec<HistorySnapshot>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryAccountFilterMode {
+    All,
+    Null,
+    Specific,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -159,18 +183,42 @@ pub fn ffi_init_history(db_path: Option<String>) -> Result<(), HistoryFfiError> 
 
 pub fn ffi_query_snapshots(
     vendor: String,
+    account_filter_mode: HistoryAccountFilterMode,
     account_id: Option<String>,
     since_ts: i64,
     until_ts: i64,
-) -> Result<Vec<HistorySnapshot>, HistoryFfiError> {
+    limit: i64,
+    cursor: Option<String>,
+) -> Result<PagedHistorySnapshots, HistoryFfiError> {
     with_history_db(|db| {
-        let snapshots =
-            history::query_snapshots(db, &vendor, account_id.as_deref(), since_ts, until_ts)?;
-        Ok(snapshots.into_iter().map(HistorySnapshot::from).collect())
+        let account_filter = match account_filter_mode {
+            HistoryAccountFilterMode::All => AccountFilter::All,
+            HistoryAccountFilterMode::Null => AccountFilter::Null,
+            HistoryAccountFilterMode::Specific => {
+                AccountFilter::Specific(account_id.as_deref().ok_or_else(|| {
+                    history::HistoryError::InvalidAccountFilter(
+                        "account_id required for Specific account filter".to_string(),
+                    )
+                })?)
+            }
+        };
+        let page = history::query_snapshots_paged(
+            db,
+            &vendor,
+            account_filter,
+            since_ts,
+            until_ts,
+            limit,
+            cursor.as_deref(),
+        )?;
+        Ok(PagedHistorySnapshots {
+            items: page.items.into_iter().map(HistorySnapshot::from).collect(),
+            next_cursor: page.next_cursor,
+        })
     })
 }
 
-pub fn ffi_record_snapshot(snapshot: HistorySnapshot) -> Result<(), HistoryFfiError> {
+pub fn ffi_record_snapshot(snapshot: UsageSnapshotInput) -> Result<i64, HistoryFfiError> {
     with_history_db(|db| {
         let snapshot = UsageSnapshot {
             vendor: snapshot.vendor,
@@ -182,8 +230,7 @@ pub fn ffi_record_snapshot(snapshot: HistorySnapshot) -> Result<(), HistoryFfiEr
             metric_kind: snapshot.metric_kind,
             raw_payload_json: None,
         };
-        history::record_snapshot(db, &snapshot)?;
-        Ok(())
+        history::record_snapshot(db, &snapshot)
     })
 }
 
@@ -201,14 +248,9 @@ fn history_slot() -> &'static Mutex<Option<HistoryDb>> {
 fn with_history_db<T>(
     f: impl FnOnce(&HistoryDb) -> Result<T, history::HistoryError>,
 ) -> Result<T, HistoryFfiError> {
-    let mut slot = history_slot()
+    let slot = history_slot()
         .lock()
         .map_err(|_| HistoryFfiError::Storage)?;
-    if slot.is_none() {
-        let path = history::default_db_path().map_err(HistoryFfiError::from)?;
-        *slot = Some(HistoryDb::open(&path).map_err(HistoryFfiError::from)?);
-    }
-
     let db = slot.as_ref().ok_or(HistoryFfiError::NotInitialized)?;
     f(db).map_err(HistoryFfiError::from)
 }

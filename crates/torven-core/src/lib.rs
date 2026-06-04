@@ -39,8 +39,9 @@ pub mod vendors;
 pub use error::{AppError, Result};
 pub use format::{LabelKind, RawMetrics, compute_metrics};
 pub use uniffi_exports::{
-    HistoryFfiError, HistorySnapshot, VendorInfo, ffi_init_history, ffi_query_snapshots,
-    ffi_record_snapshot, ffi_run_retention_janitor, get_vendor_list, ping,
+    HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot, PagedHistorySnapshots,
+    UsageSnapshotInput, VendorInfo, ffi_init_history, ffi_query_snapshots, ffi_record_snapshot,
+    ffi_run_retention_janitor, get_vendor_list, ping,
 };
 
 uniffi::include_scaffolding!("torven_core");
