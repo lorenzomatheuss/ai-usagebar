@@ -68,6 +68,36 @@ pub fn check_cost_budget(estimated_tokens: u32, _model: &str) -> Result<f64, Ins
     Ok(estimated_cost_usd)
 }
 
+/// Per-million-token pricing for `claude-3-5-sonnet-20241022` (USD).
+/// Hardcoded for v1.0 — verify quarterly against Anthropic's published
+/// price page. When prices change, bump these constants and rerun
+/// `cargo run --bin torven-evals` to refresh the baseline.
+pub const SONNET_INPUT_PRICE_PER_M: f64 = 3.0;
+pub const SONNET_OUTPUT_PRICE_PER_M: f64 = 15.0;
+
+/// Estimate the USD cost of a model call from token counts (Story 1.17).
+///
+/// Used by the `torven-evals` runner to project per-case cost without
+/// making real API calls. Pricing is hardcoded for
+/// `claude-3-5-sonnet-20241022` in v1.0; the `model` parameter is reserved
+/// for the multi-model eval extension planned in Story 1.21.
+///
+/// **Important:** when prices drift, update [`SONNET_INPUT_PRICE_PER_M`]
+/// and [`SONNET_OUTPUT_PRICE_PER_M`] (verify quarterly).
+pub fn estimate_cost(input_tokens: u32, output_tokens: u32, model: &str) -> f64 {
+    // Currently we only price Sonnet. Other models route through the same
+    // formula until Story 1.21 introduces a `model -> price` map.
+    let (in_price, out_price) = match model {
+        // Future-proofing: explicit match arm so adding a new model is a
+        // diff against this match, not a magic-string lookup.
+        "claude-3-5-sonnet-20241022" => (SONNET_INPUT_PRICE_PER_M, SONNET_OUTPUT_PRICE_PER_M),
+        _ => (SONNET_INPUT_PRICE_PER_M, SONNET_OUTPUT_PRICE_PER_M),
+    };
+    let input_cost = (input_tokens as f64) * in_price / 1_000_000.0;
+    let output_cost = (output_tokens as f64) * out_price / 1_000_000.0;
+    input_cost + output_cost
+}
+
 /// Per-instance 1/min rate limiter. Created once per `RealAnthropicClient`
 /// and consulted before every streaming request.
 ///
@@ -193,5 +223,18 @@ mod tests {
     fn rate_limiter_starts_unblocked() {
         let rl = RateLimiter::new();
         assert!(rl.try_acquire().is_ok());
+    }
+
+    #[test]
+    fn estimate_cost_sonnet_returns_expected_value() {
+        // 1000 input * $3/1M + 200 output * $15/1M = 0.003 + 0.003 = 0.006
+        let cost = estimate_cost(1000, 200, "claude-3-5-sonnet-20241022");
+        assert!((cost - 0.006).abs() < 1e-9, "expected 0.006, got {cost}");
+    }
+
+    #[test]
+    fn estimate_cost_zero_tokens_is_free() {
+        let cost = estimate_cost(0, 0, "claude-3-5-sonnet-20241022");
+        assert_eq!(cost, 0.0);
     }
 }

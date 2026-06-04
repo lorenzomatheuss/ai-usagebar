@@ -93,6 +93,102 @@ impl MockLlmClient {
             delay_ms,
         }
     }
+
+    /// Deterministic constructor for the Story 1.17 eval runner.
+    ///
+    /// Given an [`InsightsContext`], synthesizes an `InsightsOutput` whose
+    /// `headline`, `recommendation`, and individual `InsightItem.message`
+    /// strings reference numbers that came directly from the context's
+    /// `usage_payload`. This is what makes the eval pipeline reproducible
+    /// for CI without spending Anthropic credits: the mock is "faithful by
+    /// construction" — every number it cites comes from the input — so the
+    /// faithfulness baseline is meaningful instead of a coin flip.
+    ///
+    /// **Why a separate constructor:** the existing [`new`] is fixture-driven
+    /// (you hand it a hard-coded `response`); this constructor *derives* the
+    /// response from the context, which is exactly the shape the eval
+    /// pipeline needs but the wrong shape for unit tests that want to assert
+    /// on exact token sequences.
+    pub fn for_eval(context: &InsightsContext) -> Self {
+        use super::schema::{InsightItem, InsightItemType, InsightSeverity, InsightsOutput};
+
+        if context.usage_payload.is_empty() {
+            // Empty-payload guardrail path — matches the prompt template's
+            // "no data yet" instructions in `prompts/insights.v1.md`.
+            let resp = InsightsOutput {
+                headline: format!("Not enough data yet — window {} days", context.since_days),
+                insights: vec![],
+                recommendation: format!(
+                    "Verify vendor credentials and wait {} days before rerunning",
+                    context.since_days
+                ),
+                cost_usd: 0.0,
+                latency_ms: 0,
+                prompt_version: context.prompt_version.clone(),
+            };
+            return Self {
+                token_chunks: vec![],
+                response: resp,
+                delay_ms: 0,
+            };
+        }
+
+        // Build one InsightItem per vendor in the payload, referencing the
+        // total_tokens, total_cost_usd, and window_days fields — that's
+        // enough numeric evidence for the faithfulness heuristic to hit and
+        // an action verb + number for the relevance heuristic to hit.
+        let mut insights = Vec::with_capacity(context.usage_payload.len());
+        for v in &context.usage_payload {
+            // Pick a daily-token peak as a concrete claim.
+            let peak = v.daily_tokens.iter().copied().max().unwrap_or(0);
+            insights.push(InsightItem {
+                type_: InsightItemType::Trend,
+                severity: InsightSeverity::Info,
+                message: format!(
+                    "Consider reviewing {vendor}: {total} tokens over {days} days, peak {peak}",
+                    vendor = v.vendor_id,
+                    total = v.total_tokens,
+                    days = v.window_days,
+                    peak = peak,
+                ),
+                evidence: format!(
+                    "{vendor} spent {cost} dollars across {days} days",
+                    vendor = v.vendor_id,
+                    cost = v.total_cost_usd,
+                    days = v.window_days,
+                ),
+            });
+        }
+
+        let total_cost: f64 = context.usage_payload.iter().map(|v| v.total_cost_usd).sum();
+        let total_tokens: u64 = context.usage_payload.iter().map(|v| v.total_tokens).sum();
+
+        let resp = InsightsOutput {
+            headline: format!(
+                "Usage across {} vendors: {} tokens, {} dollars",
+                context.usage_payload.len(),
+                total_tokens,
+                total_cost
+            ),
+            insights,
+            recommendation: format!(
+                "Monitor the {} day window; consider capping at {} dollars",
+                context.since_days,
+                // Use observed total_cost as the suggested cap so every
+                // number in the recommendation traces back to the context
+                // (PRD §6.1 faithfulness invariant: never invent figures).
+                total_cost
+            ),
+            cost_usd: 0.02,
+            latency_ms: 100,
+            prompt_version: context.prompt_version.clone(),
+        };
+        Self {
+            token_chunks: vec![],
+            response: resp,
+            delay_ms: 0,
+        }
+    }
 }
 
 #[async_trait]
