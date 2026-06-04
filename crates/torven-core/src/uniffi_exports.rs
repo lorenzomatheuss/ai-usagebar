@@ -30,11 +30,13 @@
 //!   code can resolve `crate::ping`.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::history::{self, AccountFilter, HistoryDb, UsageSnapshot};
+use crate::keychain::{self, SecretStore, blob_bytes_from_store, set_blob_bytes_for_store};
 
 static HISTORY_DB: OnceLock<Mutex<Option<HistoryDb>>> = OnceLock::new();
+static SECRET_STORE: OnceLock<Result<Arc<dyn SecretStore>, String>> = OnceLock::new();
 
 /// Smoke-test function exposed via FFI.
 ///
@@ -119,6 +121,12 @@ pub enum HistoryFfiError {
     #[error("history database is not initialized")]
     NotInitialized,
     #[error("history storage error")]
+    Storage,
+}
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum KeychainFfiError {
+    #[error("keychain storage error")]
     Storage,
 }
 
@@ -272,6 +280,45 @@ impl From<history::HistorySnapshot> for HistorySnapshot {
 
 impl From<history::HistoryError> for HistoryFfiError {
     fn from(value: history::HistoryError) -> Self {
+        let _ = value;
+        Self::Storage
+    }
+}
+
+pub fn ffi_keychain_get_blob(vendor: String) -> Result<Vec<u8>, KeychainFfiError> {
+    let store = default_secret_store()?;
+    blob_bytes_from_store(store.as_ref(), &vendor)
+        .map(|blob| blob.unwrap_or_default())
+        .map_err(KeychainFfiError::from)
+}
+
+pub fn ffi_keychain_set_blob(vendor: String, blob: Vec<u8>) -> Result<(), KeychainFfiError> {
+    let store = default_secret_store()?;
+    set_blob_bytes_for_store(store.as_ref(), &vendor, &blob).map_err(KeychainFfiError::from)
+}
+
+fn default_secret_store() -> Result<Arc<dyn SecretStore>, KeychainFfiError> {
+    let result = SECRET_STORE.get_or_init(|| {
+        #[cfg(target_os = "macos")]
+        {
+            Ok(Arc::new(keychain::MacKeychainStore) as Arc<dyn SecretStore>)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            keychain::FileFallbackStore::default_store()
+                .map(|store| Arc::new(store) as Arc<dyn SecretStore>)
+                .map_err(|err| err.to_string())
+        }
+    });
+
+    result
+        .as_ref()
+        .map(Arc::clone)
+        .map_err(|_| KeychainFfiError::Storage)
+}
+
+impl From<keychain::KeychainError> for KeychainFfiError {
+    fn from(value: keychain::KeychainError) -> Self {
         let _ = value;
         Self::Storage
     }

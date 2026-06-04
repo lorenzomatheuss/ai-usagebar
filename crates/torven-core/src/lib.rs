@@ -30,6 +30,7 @@ pub mod countdown;
 pub mod error;
 pub mod format;
 pub mod history;
+pub mod keychain;
 pub mod pacing;
 pub mod uniffi_exports;
 pub mod usage;
@@ -39,9 +40,10 @@ pub mod vendors;
 pub use error::{AppError, Result};
 pub use format::{LabelKind, RawMetrics, compute_metrics};
 pub use uniffi_exports::{
-    HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot, PagedHistorySnapshots,
-    UsageSnapshotInput, VendorInfo, ffi_init_history, ffi_query_snapshots, ffi_record_snapshot,
-    ffi_run_retention_janitor, get_vendor_list, ping,
+    HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot, KeychainFfiError,
+    PagedHistorySnapshots, UsageSnapshotInput, VendorInfo, ffi_init_history, ffi_keychain_get_blob,
+    ffi_keychain_set_blob, ffi_query_snapshots, ffi_record_snapshot, ffi_run_retention_janitor,
+    get_vendor_list, ping,
 };
 
 uniffi::include_scaffolding!("torven_core");

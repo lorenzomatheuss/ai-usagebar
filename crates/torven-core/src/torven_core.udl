@@ -108,6 +108,10 @@ enum HistoryFfiError {
     "Storage",
 };
 
+enum KeychainFfiError {
+    "Storage",
+};
+
 namespace torven_core {
     // Smoke-test function — validates that the Rust -> FFI -> Swift pipeline
     // is wired correctly end-to-end before any real business surface is
@@ -152,4 +156,12 @@ namespace torven_core {
 
     [Throws=HistoryFfiError]
     void ffi_run_retention_janitor(u32 retention_days);
+
+    // Keychain blob helpers. The blob bytes are versioned JSON owned by
+    // torven-core and intentionally cross the FFI as bytes, not strings.
+    [Throws=KeychainFfiError]
+    sequence<u8> ffi_keychain_get_blob(string vendor);
+
+    [Throws=KeychainFfiError]
+    void ffi_keychain_set_blob(string vendor, sequence<u8> blob);
 };

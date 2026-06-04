@@ -79,6 +79,11 @@ patch version instead.
   the user's choice (and `chmod 600`ed by the Settings overlay), but
   **never commit** a real key. The `.gitignore` covers `.env`,
   `*.credentials.json`, and `.claude/`.
+- **Post-Keychain migration:** API keys should no longer remain in
+  `config.toml`. Use the Rust Keychain blob helpers
+  (`ffi_keychain_get_blob` / `ffi_keychain_set_blob`) or the
+  `SecretStore` trait; `Account.api_key = None` means "read from
+  Keychain/fallback store".
 
 ## Secret-discipline rules (learned the hard way)
 
