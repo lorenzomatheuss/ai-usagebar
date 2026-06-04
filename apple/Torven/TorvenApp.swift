@@ -3,9 +3,11 @@
 //  Torven
 //
 //  Menu-bar app entry point. Story 1.1 bootstrapped a "hello world" Text;
-//  Story 1.5 wires the real Rust → SwiftUI bridge: the app owns a
-//  `TorvenCoreBridge` at the App scope and passes it to `VendorListView` via
-//  `.environmentObject(...)`.
+//  Story 1.5 wired the Rust → SwiftUI bridge end-to-end. Story 2.1 (Wave 2)
+//  decoupled the content view via the `MenuBarContent` wrapper. Story 2.2
+//  extracts the SF Symbol into `MenuBarLabel` (configurable skeleton) so
+//  Wave 7 (AR-8) can swap to a dynamic label without touching this entry
+//  point.
 //
 //  See ADR-10 for the broader app skeleton (Story 1.15 will add
 //  `@NSApplicationDelegateAdaptor` + Keychain-shutdown wiring).
@@ -21,9 +23,11 @@ struct TorvenApp: App {
     @StateObject private var coreBridge = TorvenCoreBridge()
 
     var body: some Scene {
-        MenuBarExtra("Torven", systemImage: "chart.bar.fill") {
-            VendorListView()
+        MenuBarExtra {
+            MenuBarContent()
                 .environmentObject(coreBridge)
+        } label: {
+            MenuBarLabel(symbol: MenuBarLabel.defaultSymbol)
         }
         .menuBarExtraStyle(.window)
     }

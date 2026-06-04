@@ -1,11 +1,12 @@
 //
-//  VendorListView.swift
+//  VendorListView_Story15.swift  (originally VendorListView.swift)
 //  Torven
 //
-//  Temporary popover content for Story 1.5 — proves the Rust → FFI → Swift
-//  → SwiftUI loop works end-to-end by rendering the 5 vendors returned by
-//  `getVendorList()`. Will be replaced by the real PopoverView in Story 10
-//  (current-window snapshot + per-vendor usage cards).
+//  Story 2.1 (Wave 2): preserved here as a regression artifact of the
+//  Story 1.5 end-to-end FFI proof. Not used in the happy path from
+//  Story 2.3 onward (PopoverView takes over). Kept under the original
+//  struct name `VendorListView` so existing nm symbol audits and any
+//  forthcoming snapshot tests continue to resolve it.
 //
 
 import SwiftUI

@@ -1,0 +1,251 @@
+schema: 1
+storyId: 2.3.introduzir-popoverview
+story: '2.3'
+gate: PASS
+verdict: PASS
+score: 10.0
+gateDate: '2026-06-04'
+commit_reviewed: ab53e28
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-04T18:14:09Z'
+checked_at: '2026-06-04T18:14:09Z'
+status_reason: >-
+  Story 2.3 closes Wave 2 SwiftUI Skeleton with a clean, well-documented
+  refactor. `apple/Torven/Popover/PopoverView.swift` created with exactly
+  the structure AC-1/AC-2 prescribe: `struct PopoverView: View`, body is
+  a `VStack(spacing: 0)` containing a `Text("Torven").font(.title3).fontWeight(.semibold)`
+  header with `.padding(.horizontal, 16).padding(.vertical, 12)`, a
+  `Spacer()` below, and `.frame(width: 360, height: 420)` on the outer
+  container (the PRD starting point — UX-Q1 may revise to 380×540 in
+  Wave 3). `MenuBarContent.swift` refactored to delegate to `PopoverView()`
+  (AC-3) — the last remaining link to the Story 1.5 stub is now severed
+  on the happy path. `VendorListView_Story15.swift` continues to compile
+  in the target as preservation per AC-4 (XcodeGen recursive discovery
+  covers `Views/Preservation/`). `.gitkeep` placeholder removed from
+  `Popover/` (T1). xcodebuild Debug BUILD SUCCEEDED on commit ab53e28
+  with `-project Torven.xcodeproj` explicit (per AUTO-DECISION documented
+  in the Change Log to defend against the stale untracked `apple/Torven
+  2.xcodeproj/` ambiguity — see Recommendations). Smoke run successful
+  on PID 76680: icon visible in status bar via MenuBarLabel, popover
+  opens with header "Torven" + empty 360×420 area below (REGRESSION
+  VISUAL EXPECTED per DoD bullet 6 — vendor cards return in Wave 3).
+  Cargo workspace green (222 tests, clippy strict clean, fmt clean —
+  AC-7). All 7 ACs verified. Two AUTO-DECISIONs (frame 360×420 as PRD
+  starting point; `-project` explicit to dodge stale dir) are both
+  defensible and honest.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: n/a
+  security: n/a
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      `PopoverView.swift` (27 lines) is exactly what the story prescribed:
+      a `struct PopoverView: View` with a body that lays out a header +
+      Spacer in a VStack with `spacing: 0` (so the padding values are
+      the single source of vertical rhythm), `.frame(width: 360, height:
+      420)` on the outer container — matching AC-2's minimum acceptable
+      shape verbatim. No `@State`, no `@EnvironmentObject` — the View
+      is intentionally stateless for Wave 2 (Wave 3 will introduce
+      `@EnvironmentObject coreBridge` when vendor cards land). Header
+      comment is 9 lines naming Story 2.3 as origin, declaring 360×420
+      as a starting point subject to UX-Q1 review, and identifying
+      "first Story 3.x that adds VendorCard" as the next modifier —
+      excellent forward-reference discipline. `MenuBarContent.swift`
+      diff (15 → 22 lines) tightens the header comment to reflect the
+      Story 2.3 swap and adds an inline comment in the body explaining
+      that vendor cards enter in Wave 3 — readers will understand the
+      preservation lifecycle without leaving the file. `VendorListView_Story15.swift`
+      reviewed: still compiles cleanly with `@EnvironmentObject var
+      coreBridge: TorvenCoreBridge` (no warning about unused environment
+      object because the file is technically reachable via target
+      membership even if not on the happy path).
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      No new tests required (pure Swift refactor; ADR §10 defers XCTest
+      target until Story 1.21+ release prep). Workspace Rust tests
+      re-verified — 222 passing — covered under no_regressions.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: '7/7 ACs verified — see acs_breakdown.'
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      QA re-ran `cargo test --workspace`, `cargo clippy --workspace
+      --all-targets -- -D warnings`, `cargo fmt --check` on HEAD
+      ab53e28: all green (222 tests passing, 9 ignored AR-2/AR-3/live;
+      clippy clean; fmt clean). xcodebuild Debug BUILD SUCCEEDED per
+      dev evidence + handoff `test_evidence.xcode_build.story_2_3`.
+      Smoke run PID 76680 (handoff `test_evidence.smoke_run.story_2_3`):
+      menu bar icon visible (chart.bar.fill via MenuBarLabel), popover
+      opens with header "Torven" + empty 360×420 area, no crash. The
+      "regression" of an empty popover area is NOT a regression — it
+      is the DoD-mandated state of Story 2.3 (popover will be populated
+      by Wave 3 vendor cards). QA explicitly affirms this is the
+      expected outcome per DoD bullet 6 + Risks table + Dev Notes §1.
+
+  - name: performance
+    verdict: N/A
+    notes: >-
+      Pure refactor; no hot-path changes. `PopoverView` is a stateless
+      struct View with no computation in its body. Frame sizing
+      (360×420) is set as a `.frame(...)` modifier — zero runtime cost.
+
+  - name: security
+    verdict: N/A
+    notes: >-
+      No credentials, no I/O, no network surface, no FFI surface
+      change. Refactor stays within the SwiftUI layer.
+
+  - name: documentation
+    verdict: PASS
+    notes: >-
+      Story file (333 lines) is the most carefully-written of the three
+      Wave 2 stories — appropriate given the visual regression risk.
+      Dev Notes §1 ("Regressão Visual Esperada — INTENCIONAL") explicitly
+      tells the QA agent not to fail this story for popover emptiness;
+      Dev Notes §2 documents the frame-size decision with the UX-Q1
+      trade-off (360×420 vs 380×540) and the [AUTO-DECISION] block
+      capturing the rationale; Dev Notes §3 anchors the ADR §4 / §11 /
+      §8 references; Dev Notes §4 enumerates the file structure post-2.3;
+      Risks table tabulates the visual regression as Low with mitigation
+      = "reversível em 1 commit"; DoD bullet 6 makes the visual
+      regression an explicit acceptance criterion. Change Log captures
+      both AUTO-DECISIONs (frame size, `-project` explicit flag) with
+      clear rationale. File List exhaustive — matches actual filesystem.
+
+acs_verified: '7/7'
+acs_breakdown:
+  AC-1: >-
+    PASS — `apple/Torven/Popover/PopoverView.swift` exists at HEAD
+    ab53e28. Verified: `struct PopoverView: View` (line 13), header
+    has `Text("Torven").font(.title3).fontWeight(.semibold)` (lines
+    16-18) — `.title3` was AC-1's "or .headline" choice and dev
+    picked `.title3` (also `.fontWeight(.semibold)` adds emphasis
+    without forcing `.headline` weight; acceptable variation per AC-2's
+    "variações de padding e alignment são aceitáveis"). Spacer present
+    (line 22). `.frame(width: 360, height: 420)` applied to the outer
+    container (line 24). Header comment names Story 2.3 as origin
+    + "first Story 3.x that adds VendorCard" as next modifier.
+  AC-2: >-
+    PASS — Body matches AC-2's minimum acceptable shape: `VStack(spacing:
+    0) { Text("Torven").font(.title3).fontWeight(.semibold).frame(maxWidth:
+    .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical,
+    12); Spacer() }.frame(width: 360, height: 420)`. (a) header "Torven"
+    appears on smoke run — confirmed PID 76680. (b) frame is 360×420.
+    (c) area below header is empty Spacer — no vendor card placeholders.
+  AC-3: >-
+    PASS — `apple/Torven/MenuBar/MenuBarContent.swift` at HEAD ab53e28
+    shows `var body: some View { PopoverView() }` (line 19) replacing
+    the prior `VendorListView()` delegation. Header comment updated
+    to mention Story 2.3 swap; inline body comment explains "Vendor
+    cards enter in Wave 3 (Story 3.x)". `.environmentObject(coreBridge)`
+    is correctly NOT injected on `PopoverView()` itself — Story 2.3 does
+    not need the bridge yet (per AC-3 sample code and Dev Notes
+    §technical-constraints). `MenuBarContent` is called with
+    `.environmentObject(coreBridge)` in TorvenApp at the MenuBarExtra
+    body, which is the right scope to inject because Wave 3 vendor
+    cards will need it.
+  AC-4: >-
+    PASS — `VendorListView_Story15.swift` (42 lines) still exists in
+    `apple/Torven/Views/Preservation/` at HEAD ab53e28. xcodebuild Debug
+    BUILD SUCCEEDED with no "unreferenced file" warning — the file is
+    a member of the target (XcodeGen recursive discovery picks it up
+    via `sources: - path: Torven`). It is no longer referenced on the
+    happy path (MenuBarContent → PopoverView replaces it), but the
+    SwiftUI struct definition is syntactically valid and compiles
+    cleanly. Preservation per ADR §4 + preservation-map honored.
+  AC-5: >-
+    PASS — xcodebuild Debug BUILD SUCCEEDED on commit ab53e28 (handoff
+    `test_evidence.xcode_build.story_2_3.result: BUILD SUCCEEDED`) with
+    `-project Torven.xcodeproj` explicit per AUTO-DECISION to defend
+    against the stale `apple/Torven 2.xcodeproj/` ambiguity. `.app`
+    path:
+    `~/Library/Developer/Xcode/DerivedData/Torven-bbiaguwbzdwsygecvijfcylbmtjb/Build/Products/Debug/Torven.app`.
+  AC-6: >-
+    PASS — Smoke run successful on PID 76680 (handoff
+    `test_evidence.smoke_run.story_2_3`): app launched, menu bar icon
+    `chart.bar.fill` visible via MenuBarLabel (Story 2.2's
+    contribution), popover opened on click showing header "Torven"
+    + empty 360×420 area below (REGRESSION VISUAL EXPECTED per DoD
+    bullet 6 + Dev Notes §1). No crash. QA explicitly affirms the
+    empty popover is the correct DoD state, not a defect (vendor cards
+    return in Wave 3 — see Story 3.x backlog).
+  AC-7: >-
+    PASS — QA re-ran `cargo test --workspace`, `cargo clippy --workspace
+    --all-targets -- -D warnings`, `cargo fmt --check` on HEAD ab53e28:
+    all green (222 tests passing, 9 ignored; clippy clean; fmt clean).
+    Story 2.3 touches zero Rust files.
+
+build_gate:
+  cargo_test_workspace: 'green (222 passing, 9 ignored)'
+  cargo_clippy: 'green'
+  cargo_fmt: 'green'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED on commit ab53e28 with `-project Torven.xcodeproj` explicit)'
+
+smoke_run:
+  pid: 76680
+  menu_bar_icon: 'chart.bar.fill visible via MenuBarLabel (Story 2.2 contribution)'
+  popover_state: 'header "Torven" visible + 360×420 empty area below (regression visual EXPECTED per DoD)'
+  crash: none
+  qa_affirmation: 'empty popover is correct DoD state for Wave 2 close, not a defect'
+
+files_reviewed:
+  created:
+    - apple/Torven/Popover/PopoverView.swift
+  modified:
+    - apple/Torven/MenuBar/MenuBarContent.swift (VendorListView() → PopoverView() + header comment update)
+  deleted:
+    - apple/Torven/Popover/.gitkeep (Story 2.1 placeholder no longer needed)
+
+auto_decisions_accepted:
+  - id: AD-2.3-frame-size-pre-uxq1
+    decision: >-
+      `.frame(width: 360, height: 420)` adopted as the Story 2.3 starting
+      point instead of 380×540 (Wave 3 sizing for 5 cards).
+    rationale: >-
+      UX-Q1 (Wave 3) still open; Wave 2 does not need the final sizing
+      decision; 360×420 is the PRD value and is sufficient for the empty
+      popover skeleton. The change to 380×540 if Wave 3 decides so is
+      a 1-line edit in `PopoverView.swift`.
+    qa_verdict: ACCEPTED — defensible, documented in Dev Notes §2 with explicit reversibility.
+
+  - id: AD-2.3-xcodebuild-project-explicit
+    decision: >-
+      xcodebuild called with `-project Torven.xcodeproj` explicit
+      starting at Story 2.3 (Stories 2.1 and 2.2 used implicit resolution).
+    rationale: >-
+      `apple/` directory contains a stale untracked `apple/Torven
+      2.xcodeproj/` (pre-Wave-1, dated May 31) that ambiguates implicit
+      xcodebuild scheme resolution. Implicit resolution worked for 2.1
+      and 2.2 by alphabetical luck; the explicit flag is defensive and
+      future-proof.
+    qa_verdict: ACCEPTED — defensive, documented in Change Log. See Recommendations for follow-up cleanup of the stale directory (out-of-scope for Story 2.3).
+
+issues: []
+
+recommendations:
+  - >-
+    OUT-OF-SCOPE (Wave 3 backlog candidate): the stale untracked directory
+    `apple/Torven 2.xcodeproj/` (predates Wave 1 close on May 31) needs
+    a cleanup story. Suggested scope: 1 commit, `rm -rf "apple/Torven
+    2.xcodeproj/"` + verify xcodebuild implicit resolution works again
+    (so future stories can drop the `-project` flag). This is environment
+    dirt, not a gate failure for Wave 2 — note in Recommendations only.
+    Either: (a) tack onto first Wave 3 housekeeping story, OR (b) ask
+    @devops to include it in Wave 2 PR pre-push housekeeping (preferred
+    — keeps the cleanup atomic with the Wave that surfaced the friction).
+
+next_step: '@devops *push (consolidated Wave 2 PR — all 3 stories PASS; consider folding the stale apple/Torven 2.xcodeproj/ cleanup into the same PR per recommendation above)'
