@@ -189,6 +189,47 @@ callback interface InsightsCallback {
     void on_error(string error);
 };
 
+// Cancellation handle for in-flight insight requests (AR-2 resolution
+// §Decision 3). Swift constructs one per request, passes it into
+// `request_insight_streaming`, and calls `cancel()` on popover dismiss.
+// Internally backed by `tokio_util::sync::CancellationToken`; the Rust
+// streaming loop races `tokio::select!` against `token.cancelled()`.
+interface CancelHandle {
+    constructor();
+    void cancel();
+    boolean is_cancelled();
+};
+
+// Production AI Insights client. Holds an Anthropic API key (sourced
+// from the Keychain blob on the Swift side and crossed once at
+// construction time per the SECURITY note above) and exposes the
+// streaming entry point.
+//
+// The `[Async]` method is what AR-2 resolution §Decision 1 binds: the
+// future resolves with the final structured `InsightsOutput` on
+// `message_stop`; partial JSON chunks arrive token-by-token via
+// `callback.on_token`. `cancel_handle.cancel()` from Swift causes the
+// future to resolve `Err(Cancelled)` within the latency budget proven
+// by the AR-2 spike (p99 < 100ms).
+//
+// UDL-mode + `[Async]` + callback-interface + interface-typed argument
+// is a valid combination in UniFFI 0.29 (see
+// docs/architecture/ar-2-spike-resolution.md §Decision 1). The Rust
+// impl bridges into a tokio context via `async_compat::Compat` so the
+// reqwest streaming + `tokio::select!` cancellation race work inside
+// UniFFI's polling driver (UDL mode does not pass `async_runtime` to
+// the proc-macro scaffolding, so we wrap manually).
+interface InsightsClient {
+    constructor(string api_key);
+
+    [Async, Throws=InsightsError]
+    InsightsOutput request_insight_streaming(
+        InsightsContext context,
+        InsightsCallback callback,
+        CancelHandle cancel_handle
+    );
+};
+
 namespace torven_core {
     // Smoke-test function — validates that the Rust -> FFI -> Swift pipeline
     // is wired correctly end-to-end before any real business surface is

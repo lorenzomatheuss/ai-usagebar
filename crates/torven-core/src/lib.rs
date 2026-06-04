@@ -46,11 +46,11 @@ pub use format::{LabelKind, RawMetrics, compute_metrics};
 // resolved as `crate::InsightsContext`, `crate::InsightItem`, etc.,
 // matching the UDL declarations.
 pub use insights::{
-    InsightItem, InsightItemType, InsightSeverity, InsightsCallback, InsightsContext,
+    CancelHandle, InsightItem, InsightItemType, InsightSeverity, InsightsCallback, InsightsContext,
     InsightsError, InsightsOutput, VendorAggregate,
 };
 pub use uniffi_exports::{
-    HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot, KeychainFfiError,
+    HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot, InsightsClient, KeychainFfiError,
     PagedHistorySnapshots, UsageSnapshotInput, VendorInfo, ffi_init_history, ffi_keychain_get_blob,
     ffi_keychain_set_blob, ffi_query_snapshots, ffi_record_snapshot, ffi_run_retention_janitor,
     get_vendor_list, ping,

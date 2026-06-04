@@ -71,7 +71,7 @@ async fn test_insights_with_mock() {
         tokens: AtomicUsize::new(0),
     });
     let cb_dyn: Arc<dyn InsightsCallback> = cb.clone();
-    let cancel = CancelHandle::new();
+    let cancel = CancelHandle::new_arc();
 
     let output = client
         .request_insight_streaming(small_ctx(), cb_dyn, cancel)

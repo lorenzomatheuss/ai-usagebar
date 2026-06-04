@@ -41,12 +41,29 @@ pub struct CancelHandle {
 }
 
 impl CancelHandle {
-    /// Constructs a fresh handle in the "not cancelled" state. The UniFFI
-    /// scaffolding calls this from Swift as `CancelHandle()`.
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self {
+    /// Constructs a fresh handle in the "not cancelled" state.
+    ///
+    /// **FFI shape:** UDL declares `CancelHandle.constructor()`, which the
+    /// UniFFI 0.29 UDL-mode scaffolding lowers to a call to
+    /// `CancelHandle::new()` and wraps the return value in
+    /// `Arc::new(...)` before handing it to Swift (see
+    /// `uniffi_macros::export::scaffolding::new_for_constructor` —
+    /// `(true, false) => Arc::new(uniffi_result)`). For that wrap to
+    /// produce `Arc<CancelHandle>`, this function MUST return `Self`,
+    /// not `Arc<Self>`. Rust callers that want a shared handle use
+    /// [`CancelHandle::new_arc`].
+    pub fn new() -> Self {
+        Self {
             inner: CancellationToken::new(),
-        })
+        }
+    }
+
+    /// Rust-side convenience: same as [`CancelHandle::new`] but pre-wrapped
+    /// in `Arc`. Used by the `LlmClient` trait (which takes `cancel:
+    /// Arc<CancelHandle>`) and by tests that want to clone the handle into
+    /// a cancellation task.
+    pub fn new_arc() -> Arc<Self> {
+        Arc::new(Self::new())
     }
 
     /// Signals cancellation. All clones and child tokens observe the event
@@ -110,5 +127,16 @@ mod tests {
         assert!(!tok.is_cancelled());
         h.cancel();
         assert!(tok.is_cancelled());
+    }
+
+    #[test]
+    fn new_arc_wraps_in_arc_for_shared_owners() {
+        // Two Arc clones of the same handle observe the same cancellation
+        // event — exercises the Rust-side convenience constructor.
+        let a = CancelHandle::new_arc();
+        let b = a.clone();
+        assert!(!a.is_cancelled());
+        a.cancel();
+        assert!(b.is_cancelled());
     }
 }

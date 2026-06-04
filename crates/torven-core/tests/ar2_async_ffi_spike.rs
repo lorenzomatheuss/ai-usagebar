@@ -112,7 +112,7 @@ fn ar2_cancellation_under_100ms_and_no_post_cancel_callbacks() {
     for i in 0..CYCLES {
         let client =
             RealAnthropicClient::new_with_base_url("test-key".to_string(), base_url.clone());
-        let handle = CancelHandle::new();
+        let handle = CancelHandle::new_arc();
         let cancel_observed = Arc::new(AtomicBool::new(false));
         let cb = Arc::new(SpyCallback {
             total_tokens: AtomicUsize::new(0),
@@ -195,7 +195,7 @@ fn ar2_memory_stable_1000_cycles() {
     for i in 0..CYCLES {
         let client =
             RealAnthropicClient::new_with_base_url("test-key".to_string(), base_url.clone());
-        let handle = CancelHandle::new();
+        let handle = CancelHandle::new_arc();
         let cb_dyn: Arc<dyn InsightsCallback> = cb.clone();
         let handle_for_cancel = handle.clone();
         let cancel_task = rt.spawn(async move {
@@ -250,7 +250,7 @@ fn ar2_happy_path_100_cycles() {
     for i in 0..HAPPY_CYCLES {
         let client =
             RealAnthropicClient::new_with_base_url("test-key".to_string(), base_url.clone());
-        let handle = CancelHandle::new();
+        let handle = CancelHandle::new_arc();
         let cancel_observed = Arc::new(AtomicBool::new(false));
         let cb = Arc::new(SpyCallback {
             total_tokens: AtomicUsize::new(0),

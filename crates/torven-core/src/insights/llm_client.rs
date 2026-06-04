@@ -171,7 +171,7 @@ mod tests {
             tokens: AtomicUsize::new(0),
         });
         let cb_dyn: Arc<dyn InsightsCallback> = cb.clone();
-        let cancel = CancelHandle::new();
+        let cancel = CancelHandle::new_arc();
         let out = mock
             .request_insight_streaming(InsightsContext::synthetic(), cb_dyn, cancel)
             .await
@@ -187,7 +187,7 @@ mod tests {
             tokens: AtomicUsize::new(0),
         });
         let cb_dyn: Arc<dyn InsightsCallback> = cb.clone();
-        let cancel = CancelHandle::new();
+        let cancel = CancelHandle::new_arc();
         let cancel_clone = cancel.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
