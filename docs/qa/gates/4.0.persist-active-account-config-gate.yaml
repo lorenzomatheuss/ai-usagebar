@@ -1,0 +1,128 @@
+schema: 1
+story: '4.0'
+story_slug: persist-active-account-config
+gate: PASS
+status_reason: |
+  Story 4.0 entrega persistência via toml_edit com flock exclusivo, atomic write,
+  lazy-load no startup e graceful warn em IO error. 173 testes verdes, clippy/fmt
+  clean, FFI surface (UDL + Swift bindings) intocada. Todos os 8 AC cobertos com
+  fixtures exatas da story.
+reviewer: 'Quinn (Test Architect)'
+updated: '2026-06-05T14:00:00Z'
+
+ac_coverage:
+  - ac: AC-1
+    description: 'save_active_accounts via toml_edit + atomic write'
+    status: pass
+    evidence: |
+      crates/torven-core/src/config.rs:692-740 — DocumentMut::parse,
+      drop stale keys, cache::atomic_write (tempfile+rename), chmod 600 Unix.
+  - ac: AC-2
+    description: 'set_active_account persiste pós-swap; warn! no IO error; FFI inalterado'
+    status: pass
+    evidence: |
+      crates/torven-core/src/uniffi_exports.rs:651-675 — swap in-memory PRIMEIRO,
+      depois save_active_accounts; Err → tracing::warn! com vendor+account, mas
+      retorna Ok(()) ao Swift. UDL signature intocada.
+  - ac: AC-3
+    description: 'load_active_accounts graceful (missing file/section → HashMap::new)'
+    status: pass
+    evidence: |
+      crates/torven-core/src/config.rs:746-763 — let-else cascade: file missing,
+      parse fail, section ausente → HashMap::new(). Backward compat com configs
+      pré-4.0.
+  - ac: AC-4
+    description: 'flock exclusivo no read+write window'
+    status: pass
+    evidence: |
+      cache::acquire_lock com timeout 2s em sidecar .{filename}.lock
+      (config.rs:702). Path-derived: tests paralelos em NamedTempFiles distintos
+      não serializam. Lock dropado ao fim do scope (cobre leitura + parse + escrita).
+  - ac: AC-5
+    description: 'toml_edit preserva comentários do usuário'
+    status: pass
+    evidence: |
+      Teste save_active_accounts_preserves_user_comments (config.rs:1243-1265)
+      usa a FIXTURE EXATA da story (# Minha config pessoal + [anthropic] +
+      # chave primaria) e valida que ambos comentários sobrevivem ao save.
+  - ac: AC-6
+    description: 'Restart semântico — set_active_account → load retorna o swap'
+    status: pass
+    evidence: |
+      Lazy-load em uniffi_exports.rs:58-66 via OnceLock::get_or_init chamando
+      load_active_accounts(default_config_path()) na primeira leitura. Teste
+      set_active_account_persists_and_reload_returns_same_map confirma round-trip.
+  - ac: AC-7
+    description: 'Teste Rust test_set_active_account_persists'
+    status: pass
+    evidence: |
+      uniffi_exports.rs:823-855 — chama set_active_account_inner +
+      save_active_accounts, lê o arquivo, verifica [active_accounts] + key/value.
+  - ac: AC-8
+    description: 'test_save_load_roundtrip_two_vendors preservando campos pré-existentes'
+    status: pass
+    evidence: |
+      config.rs:1202-1222 — seed com '# user comment' + [anthropic]/enabled=true,
+      save de 2 vendors, load valida ambos, e re-lê o arquivo confirmando que
+      comentário + seção anthropic preservados.
+
+nfr_validation:
+  security:
+    status: pass
+    notes: |
+      chmod 600 preservado no Unix (config.rs:730-738). Nenhum api_key/token/secret
+      persistido em [active_accounts] — apenas pares vendor_id/account_id. Secret
+      discipline do CLAUDE.md respeitada.
+  reliability:
+    status: pass
+    notes: |
+      Graceful degradation explícita (AC-2): IO error não reverte swap nem propaga
+      erro. tracing::warn! surfaceia diagnóstico para troubleshooting. Próxima
+      escrita corrige; pior caso restart relê estado anterior (acceptable).
+  performance:
+    status: pass
+    notes: |
+      Lock timeout 2s; lazy-load amortizado (uma vez por process). atomic_write
+      single-file. Stale-removal scan O(n) em entries on-disk — n é #vendors (5).
+  maintainability:
+    status: pass
+    notes: |
+      Pattern espelha cache::atomic_write + cache::acquire_lock já estabelecidos.
+      Zero churn em deps (toml_edit + fs2 já presentes desde Story 1.6).
+
+quality_gates:
+  build: 'cargo build -p torven-core → Finished (0 warnings)'
+  tests: 'cargo test -p torven-core --lib → 173 passed; 0 failed; 0 ignored'
+  clippy: 'cargo clippy -p torven-core --all-targets -- -D warnings → clean'
+  fmt: 'cargo fmt --check -p torven-core → clean'
+  ffi_surface_unchanged: 'git diff main...HEAD em torven_core.udl + Generated/torven_core.swift → 0 changes'
+
+top_issues:
+  - id: 'MNT-001'
+    severity: low
+    finding: |
+      save_config() (usado pelo Settings overlay TUI) NÃO usa o sidecar
+      .config.lock — apenas save_active_accounts adquire o flock. Se ambos
+      rodarem simultaneamente em produção, o ramp do Settings overlay poderia
+      sobrescrever um [active_accounts] recém-escrito por AccountPicker.
+    suggested_action: |
+      Quando Wave 5 entregar Settings overlay nativo macOS, harmonizar save_config
+      para adquirir o mesmo sidecar lock. Em v1.0 atual (Wave 4) o impacto é zero
+      porque Settings overlay nativo ainda não existe. Story 4.0 explicitamente
+      coloca "testes de concorrência end-to-end" out-of-scope.
+  - id: 'REL-001'
+    severity: low
+    finding: |
+      Se default_config_path() retornar None (HOME não resolvível), persistência
+      silenciosamente no-op sem warn — apenas o lazy-load no startup retorna
+      HashMap vazio. Edge case raríssimo em ambiente macOS sane.
+    suggested_action: |
+      Adicionar tracing::debug! no None-arm de set_active_account para
+      diagnóstico. Não bloqueador.
+
+waiver: { active: false }
+
+handoff:
+  next_agent: '@devops'
+  next_command: '*push'
+  condition: 'PASS — Status InReview → Done'
