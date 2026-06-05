@@ -1,0 +1,371 @@
+schema: 1
+storyId: 4.0.5.ffi-query-aggregated
+story: '4.0.5'
+gate: PASS
+verdict: PASS
+score: 9.7
+gateDate: '2026-06-05'
+commit_reviewed: 'WORKING_TREE on branch feat/wave-4-story-4-0-5-ffi-query-aggregated (base fd67300 — pre-PR)'
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-05T19:00:00Z'
+checked_at: '2026-06-05T19:00:00Z'
+status_reason: >-
+  Story 4.0.5 lands the temporal-bucket aggregation FFI cleanly. UDL gains
+  `dictionary TimeBucket`, `enum BucketStrategy`, and the
+  `[Throws=HistoryFfiError] sequence<TimeBucket> ffi_query_aggregated(...)`
+  declaration in `namespace torven_core` matching AC-1/AC-2/AC-3 verbatim
+  (modulo UDL syntactic trailing commas, which are no-ops). Rust side
+  exposes `history::query_aggregated` as a free function in
+  `crates/torven-core/src/history/mod.rs` (positionally consistent with
+  `query_snapshots_paged` / `record_snapshot` / `run_retention_janitor` —
+  intentional deviation from the T2 spec text and documented in the Dev
+  Agent Record). The FFI mirror in `uniffi_exports.rs` reuses the
+  established `with_history_db(...)` helper and maps `HistoryError ->
+  HistoryFfiError` through the existing `From` impl; `lib.rs` re-exports
+  `BucketStrategy`, `TimeBucket`, and `ffi_query_aggregated` so UniFFI
+  UDL-mode scaffolding resolves them at `crate::*`. The
+  `bucket_size_ms(strategy, since, until)` helper implements `Auto` as
+  documented: `≤ 7d → Hourly`, `≤ 30d → Daily`, `> 30d → Weekly`. Two
+  deviations from the AC-4 verbatim SQL are documented and improve
+  correctness: (1) real table name `usage_snapshots` instead of the spec's
+  `history` placeholder, (2) per-`AccountFilter` SQL branching instead of
+  a single CASE-WHEN with a sentinel string — the latter would emit one
+  row per real `account_id` under `All` mode, all projected to NULL,
+  violating the AC-10 "merge across accounts" contract; the branched
+  shape mirrors the established `query_snapshots_paged` pattern. The
+  `account_id` semantics in `AccountFilter::All` and `AccountFilter::Null`
+  collapse to `account_id IS NULL` in the output, which is consistent
+  with the AC-5 contract ("None quando AggregateAcrossAccounts ou All").
+  Defense-in-depth on the `u64 tokens_sum` and `u32 request_count` casts
+  (`i64::max(0) as u64` and `clamp(0, u32::MAX)`) protects against the
+  documented `i64` SUM corner cases. 10 new integration tests in
+  `crates/torven-core/tests/history_aggregated.rs` cover AC-7 / AC-8 /
+  AC-9 ×3 / AC-10 ×4 / AC-5 empty-range; all pass. Full suite: 206
+  pass / 0 fail / 9 ignored (zero regression from Wave 3 baseline). Score
+  9.7 vs 10 reflects two minor non-blockers documented under `issues`:
+  (1) heterogeneous `metric_kind` defense is correctly implemented in the
+  GROUP BY but not exercised by an integration test (all 10 tests use
+  `metric_kind = "usd_spent"`); (2) AC-11 bench was opt-out and the
+  baseline measurement is correctly deferred to the Wave 6 evals binary
+  which already consumes `ffi_query_aggregated` as its primary surface.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: pass
+  security: pass
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      `history/mod.rs` lines 92-116 declare the constants
+      (`HOUR_MS = 3_600_000`, `DAY_MS = 86_400_000`,
+      `WEEK_MS = 604_800_000`, `SEVEN_DAYS_MS = 604_800_000`,
+      `THIRTY_DAYS_MS = 2_592_000_000`), the `BucketStrategy` enum
+      (Auto, Hourly, Daily, Weekly) with the right derives
+      (`Debug, Clone, Copy, PartialEq, Eq`), and the `TimeBucket`
+      struct with `pub` fields mirroring the UDL dictionary
+      (i64 bucket_start_ts / i64 bucket_end_ts / String vendor /
+      Option<String> account_id / f64 cost_sum_usd / u64 tokens_sum /
+      u32 request_count / String metric_kind). `bucket_size_ms` (lines
+      123-139) uses `saturating_sub` to defend against `until < since`
+      and `range <= SEVEN_DAYS_MS` / `range <= THIRTY_DAYS_MS`
+      boundary logic exactly as specified. `query_aggregated`
+      (lines 296-403) branches per `AccountFilter` (All/Null/Specific),
+      each branch using the same parameter binding shape as
+      `query_snapshots_paged` for consistency — `?1` = bucket_size,
+      `?2` = since_ts, `?3` = until_ts, then either `(?4 = '' OR
+      vendor = ?4)` (All/Null), or `account_id = ?4 AND (?5 = '' OR
+      vendor = ?5)` (Specific). `row_to_time_bucket` (lines 405-427)
+      computes `bucket_end_ts = bucket_start + bucket_size` per AC-1
+      and clamps the i64 → u64 / u32 casts safely. `uniffi_exports.rs`
+      lines 139-161 declare the FFI-mirror types with the same field
+      layout (no drift). `ffi_query_aggregated` (lines 302-327)
+      validates `Specific + None` → `InvalidAccountFilter` exactly
+      like `ffi_query_snapshots`, delegates to `history::query_aggregated`,
+      and converts the result through `TimeBucket::from`. `lib.rs`
+      lines 52-58 re-export the new public surface. No clippy
+      warnings; cyclomatic complexity matches existing patterns; no
+      dead code paths. Defended-in-depth cast clamps are a positive
+      hygiene signal.
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      `crates/torven-core/tests/history_aggregated.rs` has 10 tests
+      covering AC-7 (3 events / same hour bucket → 1 merged TimeBucket
+      with cost_sum = 0.06, tokens_sum = 600, request_count = 3), AC-8
+      (2 events / distinct buckets → ASC ordering verified), AC-9 ×3
+      (Auto resolves Hourly at 7d / Daily at 30d / Weekly at 60d via
+      `bucket_end_ts - bucket_start_ts == HOUR_MS|DAY_MS|WEEK_MS`),
+      AC-10 ×4 (empty vendor returns both vendors / specific vendor
+      filters / All mode merges accounts into one bucket with
+      account_id = None / Specific filters by account_id), plus AC-5
+      `empty_range_returns_empty_vec_not_error`. The AC-10 merge test
+      (`ac_10_aggregate_across_accounts_emits_none_account_id`)
+      validates the corrected semantic 2 accounts → 1 bucket
+      (cost_sum_usd = 0.30, tokens_sum = 300, request_count = 2),
+      which directly exercises the per-AccountFilter SQL branching
+      that justifies Deviation 2. `cargo test -p torven-core --test
+      history_aggregated` = 10/10 pass.
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: >-
+      AC-1 PASS — `dictionary TimeBucket { ... }` present in
+      `torven_core.udl` lines 134-143 with all 8 fields in the spec
+      order and types. AC-2 PASS — `enum BucketStrategy { ... }` in
+      lines 155-160 with the 4 variants (Auto, Hourly, Daily,
+      Weekly); UDL syntactic trailing comma is no-op vs the AC-2
+      verbatim shape. AC-3 PASS — `[Throws=HistoryFfiError] sequence
+      <TimeBucket> ffi_query_aggregated(string vendor,
+      HistoryAccountFilterMode account_filter_mode, string?
+      account_id, i64 since_ts, i64 until_ts, BucketStrategy
+      bucket_strategy);` in lines 365-373 inside `namespace
+      torven_core {}`. AC-4 PASS — SQL deviates from the spec
+      verbatim with documented improvements: `usage_snapshots`
+      (real schema table) instead of `history`; per-AccountFilter
+      branching instead of CASE-WHEN sentinel. `bucket_size_ms`
+      logic matches Auto thresholds exactly (`≤ 7d → Hourly`,
+      `≤ 30d → Daily`, otherwise Weekly). AC-5 PASS — buckets
+      ordered ASC by `bucket_start_ts`, empty range returns
+      `Ok(vec![])` (`empty_range_returns_empty_vec_not_error`
+      test), `account_id` is `None` under All/Null and `Some(...)`
+      under Specific, `metric_kind` preserved in the SELECT and
+      GROUP BY. AC-6 PASS — `ffi_query_aggregated` reuses
+      `with_history_db(...)` (same OnceLock pattern as
+      `ffi_query_snapshots`); error mapping through the existing
+      `From<HistoryError> for HistoryFfiError` impl. AC-7 PASS —
+      `ac_7_three_events_same_hour_bucket_sum_correctly`. AC-8
+      PASS — `ac_8_two_events_distinct_buckets_emit_ascending`.
+      AC-9 PASS — three tests verify Auto granularity selection at
+      7d / 30d / 60d. AC-10 PASS — four tests verify vendor and
+      account filter semantics. AC-11 SKIPPED (opt-out) — bench
+      deferred to Wave 6 evals binary; documented in Dev Agent
+      Record.
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      `cargo test -p torven-core` = 206 pass / 0 fail / 9 ignored
+      (live API tests + greenfield gen tests). The 196 pre-existing
+      tests (including `ffi_query_snapshots`, `history_e2e`,
+      vendor-specific tests, FFI scaffolding) are unchanged. Wave 3
+      baseline was 225 workspace tests; the delta is +10 (only this
+      story added tests). No test was modified or deleted. UniFFI
+      0.29 scaffolding regenerates cleanly with the UDL additions
+      (the build does not produce drift warnings).
+  - name: performance
+    verdict: PASS
+    notes: >-
+      The SQLite GROUP BY query uses positional binding (no string
+      interpolation), pulls the `bucket_size` once per call, and
+      reuses the indexed `ts` column for both the range filter and
+      the integer-division bucket key. The output volume is bounded
+      by the Auto strategy: 7d/Hourly → ≤168 buckets/vendor,
+      30d/Daily → ≤30 buckets/vendor, 60d+/Weekly → ≤~52
+      buckets/vendor — well under the AR-8 Swift Charts mark budget
+      (~840 buckets × 5 vendors = 4200 marks worst case). AC-11
+      bench skipped per the optional flag; NFR-1 baseline will be
+      established by the Wave 6 evals binary, which already
+      consumes `ffi_query_aggregated` and has the synthetic 10K /
+      43K dataset fixtures needed for a meaningful measurement.
+  - name: security
+    verdict: PASS
+    notes: >-
+      All SQL parameters bound positionally via rusqlite's
+      `query_map((...), |row| ...)` — no string interpolation, no
+      injection surface. No secret material crosses the FFI through
+      this surface (vendor slug + opaque account_id only; per the
+      SECURITY note at the top of `torven_core.udl`). No new
+      Keychain reads / writes. `metric_kind` is preserved verbatim
+      from the column value, which is producer-controlled (Rust
+      vendor modules) — not user input.
+  - name: documentation
+    verdict: PASS
+    notes: >-
+      UDL has rich doc comments for `dictionary TimeBucket`
+      (Story 4.0.5 reference, field semantics, metric_kind
+      heterogeneity note), `enum BucketStrategy` (Auto thresholds),
+      and `ffi_query_aggregated` (parameter semantics, empty-string
+      vendor convention, ASC ordering / omit-empty-buckets
+      contract). Rust side has matching docstrings on
+      `query_aggregated` (mirrors `query_snapshots_paged` pattern
+      note + metric_kind GROUP BY rationale) and
+      `bucket_size_ms` (Auto-derivation rationale tied to AR-8 / 4.3
+      AC-8). Story Dev Agent Record documents both SQL deviations
+      with rationale (schema-table-name correction + AccountFilter
+      branching), the location-deviation (`mod.rs` free fn vs the
+      `impl HistoryDb` method T2 originally described), and the
+      AC-11 opt-out decision tied to Wave 6 evals. Change Log has
+      the agent stamp.
+
+acceptance_criteria_detail:
+  AC-1: >-
+    PASS — `dictionary TimeBucket` in `torven_core.udl` lines
+    134-143 declares all 8 fields (`i64 bucket_start_ts`, `i64
+    bucket_end_ts`, `string vendor`, `string? account_id`, `f64
+    cost_sum_usd`, `u64 tokens_sum`, `u32 request_count`, `string
+    metric_kind`) in spec order. Doc comment annotates Wave 4
+    motivation and the `account_id` Some/None semantics.
+  AC-2: >-
+    PASS — `enum BucketStrategy { "Auto", "Hourly", "Daily",
+    "Weekly", }` in lines 155-160; the UDL syntactic trailing
+    comma is parser-permitted and identical at codegen output.
+    Doc comment ties Auto thresholds to NFR-1 / AR-8.
+  AC-3: >-
+    PASS — `[Throws=HistoryFfiError] sequence<TimeBucket>
+    ffi_query_aggregated(string vendor, HistoryAccountFilterMode
+    account_filter_mode, string? account_id, i64 since_ts, i64
+    until_ts, BucketStrategy bucket_strategy);` declared at lines
+    365-373 inside `namespace torven_core {}`. Doc comment
+    explicitly notes `vendor = ""` → all vendors; `[since_ts,
+    until_ts)` semantic; account_id ignored unless mode = Specific.
+  AC-4: >-
+    PASS (with documented deviations) — `bucket_size_ms` matches
+    the Auto thresholds exactly. SQL deviates from the spec
+    verbatim with two improvements: (a) `FROM usage_snapshots`
+    instead of `FROM history` — the real schema table name is
+    `usage_snapshots` (see `migrations/001_initial.sql`); the spec
+    text used a placeholder. (b) `query_aggregated` branches per
+    `AccountFilter::{All, Null, Specific}` rather than a single
+    CASE-WHEN sentinel — the AC-4 verbatim SQL would, under `All`
+    mode, emit one row per real `account_id` (all projected to
+    NULL) because the GROUP BY kept the raw column. The branched
+    shape (mirror of `query_snapshots_paged`) preserves the AC-5
+    "All → single None bucket" contract and is validated by
+    `ac_10_aggregate_across_accounts_emits_none_account_id`. Both
+    deviations are documented in the Dev Agent Record.
+  AC-5: >-
+    PASS — buckets without rows are omitted (no zero-row
+    emission); `ORDER BY bucket_start ASC` enforced; empty range
+    → `Ok(vec![])` per `empty_range_returns_empty_vec_not_error`;
+    `account_id = None` under `AccountFilter::All` /
+    `AccountFilter::Null` (the SQL projects `NULL AS
+    bucket_account_id` and the row reader carries the Option
+    through); `account_id = Some(...)` under
+    `AccountFilter::Specific`; `metric_kind` preserved
+    verbatim and present in the GROUP BY key so heterogeneous
+    kinds do not silently merge.
+  AC-6: >-
+    PASS — `ffi_query_aggregated` (uniffi_exports.rs lines
+    302-327) uses `with_history_db(|db| { ... })` — the same
+    `OnceLock<Mutex<Option<HistoryDb>>>` helper as
+    `ffi_query_snapshots`. `HistoryError` → `HistoryFfiError`
+    via the existing `From` impl (lines 358-363). The
+    `AccountFilter::Specific` `+ account_id = None` branch
+    raises `HistoryError::InvalidAccountFilter` identical to
+    `ffi_query_snapshots`.
+  AC-7: >-
+    PASS — `ac_7_three_events_same_hour_bucket_sum_correctly`
+    asserts `buckets.len() == 1`, `bucket_start_ts = 3_600_000`,
+    `bucket_end_ts = 7_200_000`, `cost_sum_usd ≈ 0.06`,
+    `tokens_sum = 600`, `request_count = 3`, `account_id =
+    None`, `metric_kind = "usd_spent"`.
+  AC-8: >-
+    PASS — `ac_8_two_events_distinct_buckets_emit_ascending`
+    asserts `buckets.len() == 2` and `buckets[1].bucket_start_ts
+    > buckets[0].bucket_start_ts` (3_600_000 → 7_200_000).
+  AC-9: >-
+    PASS — Three tests assert `bucket_end_ts - bucket_start_ts`
+    equals `HOUR_MS` at 7d range, `DAY_MS` at 30d range, and
+    `WEEK_MS` at 60d range, confirming Auto granularity
+    selection.
+  AC-10: >-
+    PASS — Four tests cover the matrix: empty vendor (returns
+    both vendors); specific vendor (filters others out);
+    AccountFilter::All on a 2-account vendor (merges into one
+    bucket with `account_id = None`, `cost_sum_usd = 0.30`,
+    `tokens_sum = 300`, `request_count = 2`); AccountFilter::Specific
+    (filters and emits `account_id = Some("openrouter-acme")`).
+  AC-11: >-
+    SKIPPED (opt-out, accepted) — Marked optional in the spec.
+    NFR-1 baseline measurement is correctly deferred to the
+    Wave 6 evals binary, which is the primary consumer of
+    `ffi_query_aggregated` and has the synthetic event
+    fixtures (10K / 43K events) needed for a meaningful
+    apples-to-apples bench against the alternative path
+    (`ffi_query_snapshots` + Swift-side aggregation).
+    Documented in Dev Agent Record.
+
+build_gate:
+  cargo_test_p_torven_core: 'green (206 passing — 10 new + 196 baseline; 9 ignored = live API + greenfield gens; 0 failed)'
+  cargo_test_history_aggregated: 'green (10/10 — AC-7 / AC-8 / AC-9 ×3 / AC-10 ×4 / AC-5 empty-range)'
+  cargo_clippy: 'green (-p torven-core --all-targets -- -D warnings — no warnings)'
+  cargo_fmt_check: 'green (-p torven-core)'
+  udl_rust_sync: 'green (UniFFI 0.29 UDL-mode scaffolding regenerated cleanly; `lib.rs` re-exports resolve `crate::TimeBucket` / `crate::BucketStrategy` / `crate::ffi_query_aggregated`)'
+
+files_reviewed:
+  modified:
+    - crates/torven-core/src/torven_core.udl (added `dictionary TimeBucket`, `enum BucketStrategy`, `ffi_query_aggregated(...)` inside `namespace torven_core`)
+    - crates/torven-core/src/history/mod.rs (constants HOUR_MS/DAY_MS/WEEK_MS/SEVEN_DAYS_MS/THIRTY_DAYS_MS, `BucketStrategy`, `TimeBucket`, `bucket_size_ms`, `query_aggregated`, private `row_to_time_bucket`)
+    - crates/torven-core/src/uniffi_exports.rs (FFI mirror types `TimeBucket` + `BucketStrategy`, `ffi_query_aggregated`, `From<HistoryTimeBucket>` / `From<BucketStrategy>` impls)
+    - crates/torven-core/src/lib.rs (re-export `BucketStrategy`, `TimeBucket`, `ffi_query_aggregated` from `uniffi_exports::*`)
+  created:
+    - crates/torven-core/tests/history_aggregated.rs (10 integration tests — AC-7 / AC-8 / AC-9 ×3 / AC-10 ×4 / AC-5 empty-range)
+  not_modified_by_design:
+    - apple/Torven/Bridge/Generated/torven_core.swift (Swift bindings regenerated automatically by `make build-core`; the Swift Charts consumer is Story 4.3+)
+    - migrations/001_initial.sql (no schema change — `usage_snapshots` already has `ts`, `cost_usd`, `tokens_used`, `account_id`, `metric_kind`)
+    - apple/Torven/* (no Swift consumer in this story; Wave 4 Stories 4.3/4.4/4.5 will consume `TimeBucket[]`)
+
+issues:
+  - severity: low
+    category: tests
+    description: >-
+      All 10 integration tests use `metric_kind = "usd_spent"`. The
+      `metric_kind` heterogeneity defense (included in all three
+      GROUP BY branches) is therefore implemented correctly but
+      not exercised by an end-to-end test. A future test with two
+      events at the same bucket_start + vendor but with
+      `metric_kind = "usd_spent"` vs `metric_kind = "tokens_used"`
+      would assert the contract directly (expect 2 separate
+      `TimeBucket` rows, not 1 silently-merged row).
+    recommendation: >-
+      Add as a low-priority follow-up test in Wave 6 when the
+      evals binary populates synthetic events with mixed
+      `metric_kind`. Not a blocker for this story — the
+      implementation is correct by inspection and the existing
+      `metric_kind` assertions in AC-7 / AC-10 verify
+      preservation in the no-mix case.
+  - severity: low
+    category: performance
+    description: >-
+      AC-11 bench skipped. The numerical NFR-1 baseline for the
+      Swift Charts performance budget is not recorded as part of
+      this story.
+    recommendation: >-
+      Accept per the AC-11 opt-out flag. The Wave 6 evals binary
+      (already on the roadmap and consuming `ffi_query_aggregated`
+      as primary surface) is the correct venue for the baseline
+      measurement — it has the synthetic fixtures (10K / 43K
+      events) and the apples-to-apples alternative path
+      (`ffi_query_snapshots` + Swift-side aggregation) needed for
+      a meaningful comparison.
+
+risks_followup:
+  - risk_id: metric_kind_heterogeneity
+    severity: low_after_mitigation
+    mitigation: "Included in GROUP BY across All / Null / Specific branches; verified by code review."
+    followup: "Add integration test for mixed metric_kind in Wave 6 evals work."
+  - risk_id: i64_to_u64_cast_safety
+    severity: low_after_mitigation
+    mitigation: "`tokens_sum_i64.max(0) as u64` clamps; `request_count_i64.clamp(0, u32::MAX) as u32` clamps. Production rows are non-negative via `COALESCE(tokens_used, 0)`, but defense-in-depth is in place."
+    followup: "None."
+  - risk_id: bucket_alignment_utc
+    severity: low
+    mitigation: "Bucket boundary uses integer division of Unix ms — implicit UTC, consistent with `query_snapshots_paged`."
+    followup: "Wave 5 polish can revisit local-time buckets if user feedback requests it. Documented in story Risks."
+
+advisory_recommendations:
+  - "Consider exposing `bucket_size_ms` as `pub` (already is) for the Swift Charts ViewModel to label x-axis ticks consistently — observed during code review that the Swift side will need this constant for `bucket_end_ts` reconstruction."
+  - "The `vendor = \"\"` convention for \"all vendors\" is sound but worth documenting in the public `query_aggregated` docstring (it's covered in the UDL doc but not in the Rust doc) — small follow-up."
+
+decision: PASS
+recommended_next_action: >-
+  Mark Story 4.0.5 Status InReview → Done. Hand off to @devops for
+  push + PR creation in the Wave 4 batch (alongside 4.0 and the
+  remaining Wave 4 stories). The Wave 4 Swift Charts stories
+  (4.3, 4.4, 4.5) can now consume `ffi_query_aggregated` directly
+  via the regenerated `torven_core.swift` bindings.

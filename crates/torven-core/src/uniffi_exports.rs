@@ -34,7 +34,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::config::{Config, account_id};
-use crate::history::{self, AccountFilter, HistoryDb, UsageSnapshot};
+use crate::history::{
+    self, AccountFilter, BucketStrategy as HistoryBucketStrategy, HistoryDb,
+    TimeBucket as HistoryTimeBucket, UsageSnapshot,
+};
 use crate::insights::client::RealAnthropicClient;
 use crate::insights::{
     CancelHandle, InsightsCallback, InsightsContext, InsightsError, InsightsOutput, LlmClient,
@@ -131,6 +134,30 @@ pub enum HistoryAccountFilterMode {
     All,
     Null,
     Specific,
+}
+
+/// Mirrors `dictionary TimeBucket` in `torven_core.udl`. One row of the
+/// SQLite-side temporal aggregation computed by [`ffi_query_aggregated`].
+/// See Story 4.0.5 §AC-1.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimeBucket {
+    pub bucket_start_ts: i64,
+    pub bucket_end_ts: i64,
+    pub vendor: String,
+    pub account_id: Option<String>,
+    pub cost_sum_usd: f64,
+    pub tokens_sum: u64,
+    pub request_count: u32,
+    pub metric_kind: String,
+}
+
+/// Mirrors `enum BucketStrategy` in `torven_core.udl`. See Story 4.0.5 §AC-2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BucketStrategy {
+    Auto,
+    Hourly,
+    Daily,
+    Weekly,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -266,6 +293,39 @@ pub fn ffi_run_retention_janitor(retention_days: u32) -> Result<(), HistoryFfiEr
     })
 }
 
+/// Story 4.0.5 (Wave 4) — FFI entry for SQLite-side temporal aggregation.
+///
+/// Delegates to [`history::query_aggregated`], mapping the FFI enum
+/// [`HistoryAccountFilterMode`] / [`BucketStrategy`] back onto the
+/// strongly-typed Rust [`AccountFilter`] / [`HistoryBucketStrategy`].
+/// `vendor = ""` (empty string) means "all vendors" per AC-3.
+pub fn ffi_query_aggregated(
+    vendor: String,
+    account_filter_mode: HistoryAccountFilterMode,
+    account_id: Option<String>,
+    since_ts: i64,
+    until_ts: i64,
+    bucket_strategy: BucketStrategy,
+) -> Result<Vec<TimeBucket>, HistoryFfiError> {
+    with_history_db(|db| {
+        let account_filter = match account_filter_mode {
+            HistoryAccountFilterMode::All => AccountFilter::All,
+            HistoryAccountFilterMode::Null => AccountFilter::Null,
+            HistoryAccountFilterMode::Specific => {
+                AccountFilter::Specific(account_id.as_deref().ok_or_else(|| {
+                    history::HistoryError::InvalidAccountFilter(
+                        "account_id required for Specific account filter".to_string(),
+                    )
+                })?)
+            }
+        };
+        let strategy = HistoryBucketStrategy::from(bucket_strategy);
+        let buckets =
+            history::query_aggregated(db, &vendor, account_filter, since_ts, until_ts, strategy)?;
+        Ok(buckets.into_iter().map(TimeBucket::from).collect())
+    })
+}
+
 fn history_slot() -> &'static Mutex<Option<HistoryDb>> {
     HISTORY_DB.get_or_init(|| Mutex::new(None))
 }
@@ -299,6 +359,32 @@ impl From<history::HistoryError> for HistoryFfiError {
     fn from(value: history::HistoryError) -> Self {
         let _ = value;
         Self::Storage
+    }
+}
+
+impl From<HistoryTimeBucket> for TimeBucket {
+    fn from(value: HistoryTimeBucket) -> Self {
+        Self {
+            bucket_start_ts: value.bucket_start_ts,
+            bucket_end_ts: value.bucket_end_ts,
+            vendor: value.vendor,
+            account_id: value.account_id,
+            cost_sum_usd: value.cost_sum_usd,
+            tokens_sum: value.tokens_sum,
+            request_count: value.request_count,
+            metric_kind: value.metric_kind,
+        }
+    }
+}
+
+impl From<BucketStrategy> for HistoryBucketStrategy {
+    fn from(value: BucketStrategy) -> Self {
+        match value {
+            BucketStrategy::Auto => Self::Auto,
+            BucketStrategy::Hourly => Self::Hourly,
+            BucketStrategy::Daily => Self::Daily,
+            BucketStrategy::Weekly => Self::Weekly,
+        }
     }
 }
 
