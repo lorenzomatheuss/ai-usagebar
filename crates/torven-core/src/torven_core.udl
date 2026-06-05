@@ -115,10 +115,48 @@ dictionary PagedHistorySnapshots {
     string? next_cursor;
 };
 
+// TimeBucket — Story 4.0.5 (Wave 4). Single row of temporally-bucketed usage
+// aggregation, computed in SQLite via `GROUP BY (ts / bucket_size_ms)`. Used
+// by `ffi_query_aggregated` to feed Swift Charts (Stories 4.3, 4.4, 4.5).
+//
+// Field semantics (see Story 4.0.5 §AC-1, AC-5):
+//   * `bucket_start_ts`  — Unix ms, inclusive. Lower bound of the bucket.
+//   * `bucket_end_ts`    — Unix ms, exclusive. Always
+//                          `bucket_start_ts + bucket_size_ms`.
+//   * `account_id`       — Some when `account_filter_mode = Specific`;
+//                          None when `All` or `Null` (aggregated across
+//                          accounts, or filtered to NULL-account rows).
+//   * `metric_kind`      — preserved verbatim from `usage_snapshots.metric_kind`.
+//                          Vendors emit `cost_usd_total`, `tokens_used`, or
+//                          `pct_used` heterogeneously; `metric_kind` is part
+//                          of the GROUP BY key so heterogeneous buckets are
+//                          never silently merged.
+dictionary TimeBucket {
+    i64 bucket_start_ts;
+    i64 bucket_end_ts;
+    string vendor;
+    string? account_id;
+    f64 cost_sum_usd;
+    u64 tokens_sum;
+    u32 request_count;
+    string metric_kind;
+};
+
 enum HistoryAccountFilterMode {
     "All",
     "Null",
     "Specific",
+};
+
+// BucketStrategy — Story 4.0.5 (Wave 4). Selects the bucket width for
+// `ffi_query_aggregated`. `Auto` derives the width from the requested range
+// so the number of buckets stays bounded for Swift Charts performance
+// (NFR-1, AR-8): ≤7d → Hourly, ≤30d → Daily, otherwise Weekly.
+enum BucketStrategy {
+    "Auto",
+    "Hourly",
+    "Daily",
+    "Weekly",
 };
 
 enum HistoryFfiError {
@@ -302,6 +340,37 @@ namespace torven_core {
 
     [Throws=HistoryFfiError]
     void ffi_run_retention_janitor(u32 retention_days);
+
+    // Story 4.0.5 (Wave 4) — temporal-bucket aggregation. SQLite computes
+    // `SUM(cost_usd) / SUM(tokens_used) / COUNT(*)` grouped by
+    // `(ts / bucket_size_ms, vendor, account_id, metric_kind)`, so the Swift
+    // Charts consumers (Stories 4.3/4.4/4.5) never have to client-side
+    // aggregate the ~43K events of a 30-day window (NFR-1 perf budget).
+    //
+    // Parameters:
+    //   * `vendor`              — vendor slug (e.g. "anthropic"). Empty string
+    //                              means "all vendors".
+    //   * `account_filter_mode` — `All` aggregates across accounts (returned
+    //                              `account_id` is null); `Null` filters to
+    //                              rows with NULL `account_id`; `Specific`
+    //                              filters to the `account_id` argument.
+    //   * `account_id`          — only consulted when mode = `Specific`.
+    //   * `since_ts`/`until_ts` — Unix ms window. `[since_ts, until_ts)`
+    //                              (since inclusive, until exclusive).
+    //   * `bucket_strategy`     — see `BucketStrategy`. `Auto` picks
+    //                              Hourly/Daily/Weekly from the range width.
+    //
+    // Returns buckets ordered ASC by `bucket_start_ts`. Buckets with zero
+    // matching rows are omitted; an empty range returns `[]`, not an error.
+    [Throws=HistoryFfiError]
+    sequence<TimeBucket> ffi_query_aggregated(
+        string vendor,
+        HistoryAccountFilterMode account_filter_mode,
+        string? account_id,
+        i64 since_ts,
+        i64 until_ts,
+        BucketStrategy bucket_strategy
+    );
 
     // Keychain blob helpers. The blob bytes are versioned JSON owned by
     // torven-core and intentionally cross the FFI as bytes, not strings.
