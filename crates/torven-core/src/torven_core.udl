@@ -71,6 +71,24 @@ dictionary VendorInfo {
     boolean is_configured;
 };
 
+// AccountInfo — single account row for the per-vendor account picker.
+//
+// Story 3.3 (Wave 3) introduces this dictionary so the SwiftUI AccountPicker
+// can list the credentials a user configured for a multi-account vendor
+// (OpenRouter, Z.AI). The active marker is owned by an in-memory cache in
+// `uniffi_exports.rs` for Wave 3; Wave 4+ may persist it to `config.toml`.
+//
+// SECURITY: `id` and `label` are non-secret. The `id` is the deterministic
+// `account_id(vendor, name)` from `config.rs` (e.g. "openrouter-clienteacme"),
+// safe to log and surface in UI. NEVER add `api_key` or any credential
+// material to this dictionary — secrets live exclusively in the Keychain
+// (Story 1.20) and are referenced by `id` opaquely.
+dictionary AccountInfo {
+    string id;
+    string label;
+    boolean is_active;
+};
+
 dictionary HistorySnapshot {
     i64 id;
     string vendor;
@@ -109,6 +127,16 @@ enum HistoryFfiError {
 };
 
 enum KeychainFfiError {
+    "Storage",
+};
+
+// AccountFfiError — Story 3.3 (Wave 3) — surface for `set_active_account`.
+// VendorNotFound: caller passed a vendor_id slug not recognized by the core.
+// AccountNotFound: vendor exists but no account with the given id is configured.
+// Storage: failure reading config.toml or writing the in-memory active map.
+enum AccountFfiError {
+    "VendorNotFound",
+    "AccountNotFound",
     "Storage",
 };
 
@@ -282,4 +310,26 @@ namespace torven_core {
 
     [Throws=KeychainFfiError]
     void ffi_keychain_set_blob(string vendor, sequence<u8> blob);
+
+    // Story 3.3 (Wave 3) — Account picker FFI surface.
+    //
+    // `get_accounts_for_vendor` returns the configured `AccountInfo` rows for
+    // the given vendor slug (e.g. "openrouter"). Vendors without multi-account
+    // support (Anthropic, OpenAI, Gemini in v1.0) return an empty sequence —
+    // not an error — so the AccountPicker can render an "Only 1 account
+    // configured" affordance without special-casing per vendor in Swift.
+    //
+    // `is_active` reflects the in-memory active account map maintained by
+    // `uniffi_exports.rs`. The first call after process start defaults to
+    // the first account in the vendor's `Vec<Account>` (per config.toml
+    // order); subsequent `set_active_account` calls update the map.
+    // Persistence to TOML is intentionally deferred to Wave 4.
+    sequence<AccountInfo> get_accounts_for_vendor(string vendor_id);
+
+    // `set_active_account` swaps the in-memory active account for `vendor_id`
+    // to `account_id`. Validates that both exist; raises `VendorNotFound`
+    // or `AccountNotFound` otherwise. Storage errors (config.toml read
+    // failure, poisoned mutex) surface as `Storage`.
+    [Throws=AccountFfiError]
+    void set_active_account(string vendor_id, string account_id);
 };

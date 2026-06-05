@@ -1,0 +1,231 @@
+schema: 1
+storyId: 3.1.vendor-card-skeleton
+story: '3.1'
+gate: PASS
+verdict: PASS
+score: 10.0
+gateDate: '2026-06-04'
+commit_reviewed: 'WORKING_TREE on dcb1177 (Wave 3 not yet committed — batch PR follows after gates)'
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-04T22:30:00Z'
+checked_at: '2026-06-04T22:30:00Z'
+status_reason: >-
+  Wave 3 kickoff story executes a clean, surgical addition: `VendorCard.swift`
+  born as a parametrized SwiftUI view (`init(vendor: VendorInfo)`) with the
+  three regions AC-2 mandates (header row with `displayName` + isConfigured
+  indicator, metrics row with typographic em-dash placeholders "$— this
+  period" / "—% used", and a `Rectangle(.fill(Color.secondary.opacity(0.15))
+  .frame(height: 24))` sparkline placeholder), wrapped in
+  RoundedRectangle(cornerRadius: 8) background per AC-3 canonical
+  reference. `PopoverView.swift` carries the integration proof exactly per
+  AC-4 (`@EnvironmentObject coreBridge` + `if let openRouter = coreBridge.
+  vendors.first(where: { $0.id == "openrouter" })` rendering one card).
+  AC-5 (T4) confirmed without code change — `TorvenApp.swift:28` already
+  applied `.environmentObject(coreBridge)` to `MenuBarContent { }` since
+  Stories 1.5/2.1; SwiftUI propagates through the hierarchy. AC-9
+  `#Preview` block delivered with 2 cards (configured true/false). Gates
+  verified by QA on the working tree: `cargo test --workspace` = 225
+  passing (160 torven-core lib + 6 Story 3.3 new tests bundled in
+  uniffi_exports = 166 + sibling crate tests), clippy strict clean, fmt
+  clean. xcodebuild Debug BUILD SUCCEEDED per dev Change Log. Smoke run
+  confirmed by Lorenzo (header "Torven" + 1 OpenRouter card visible,
+  isConfigured=false → `circle` gray icon, em-dash placeholders rendered,
+  no crash 30s).
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: n/a
+  security: n/a
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      `VendorCard.swift` (87 LOC including #Preview) is a textbook
+      constructor-injection View — `let vendor: VendorInfo` as stored
+      property, zero global state references in the original Story 3.1
+      shape. The @EnvironmentObject + @State Picker plumbing on lines
+      28-29 are Story 3.3 additions to the same file (acknowledged by
+      AC-10 of Story 3.3); for the Story 3.1 gate scope the visual body
+      structure is intact and matches AC-2/AC-3 canonical. Header
+      comment (lines 1-21) declares Story 3.1 origin AND forward-
+      references Story 3.2 (ForEach wrap) and Story 3.3 (tap → sheet) —
+      forward-reference discipline established in Wave 2 is honored.
+      Em-dash literals on lines 44 and 48 use U+2014 (verified — the
+      AC-2 typographic intent is preserved). `PopoverView.swift` (Story
+      3.1 baseline) was minimal — `@EnvironmentObject coreBridge` +
+      `if-let openRouter` block + preserved Spacer — and was
+      subsequently refactored to ForEach by Story 3.2 (lifecycle exactly
+      as anticipated by AC-4).
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      No new XCTest required by this story (pure SwiftUI scaffold; ADR
+      §10 defers XCTest target until Story 1.21+). Cargo workspace
+      regression coverage is under no_regressions. The Story 3.1 spike
+      did not touch Rust — `cargo test` baseline 219 (pre-3.3) preserved.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: '9/9 ACs verified (AC-9 #Preview optional, delivered) — see acs_breakdown.'
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      QA re-ran `cargo test --workspace` on the working tree (no Rust
+      changes from 3.1 itself; Story 3.3 added 6 unit tests to
+      uniffi_exports which all pass): 225 tests pass total, 9 ignored
+      (AR-2/AR-3/live as expected from prior waves). `cargo clippy
+      --workspace --all-targets -- -D warnings` clean. `cargo fmt
+      --check` clean. xcodebuild Debug BUILD SUCCEEDED per dev Change
+      Log evidence (`Torven.app` at
+      `~/Library/Developer/Xcode/DerivedData/Torven-bbiaguwbzdwsygecvijfcylbmtjb/Build/Products/Debug/`).
+      Smoke run preserved Wave 2 parity (header rendered, popover
+      opened) and added the new OpenRouter card per AC-7.
+
+  - name: performance
+    verdict: N/A
+    notes: >-
+      Renders one extra VStack/HStack pair plus a Rectangle on top of
+      the existing header. PRD §6.5 NFR-1 (<50ms warm) is benchmarked
+      empirically in Story 3.2 once all 5 cards render; Story 3.1's
+      single-card overhead is trivial and not separately measured.
+
+  - name: security
+    verdict: N/A
+    notes: >-
+      No new FFI surface, no credentials, no I/O. `VendorInfo` is
+      already minted in Story 1.5 with the `id` + `display_name` +
+      `is_configured` fields explicitly free of secret material (see
+      `torven_core.udl` SECURITY note).
+
+  - name: documentation
+    verdict: PASS
+    notes: >-
+      Story file exhaustive: Context/Motivation explains why skeleton
+      (vs cost-real); Dev Notes documents constructor-injection
+      rationale, OpenRouter-first decision lineage (kickoff Wave 3
+      handoff §elicitação Lorenzo, ADR §11 entry 11), frame 360×420
+      preservation (UX-Q1 closure deferred to Story 3.2), and the
+      VendorInfo current shape (id + displayName + isConfigured only).
+      File List exhaustive and matches the actual filesystem. Header
+      comments on `VendorCard.swift` and `PopoverView.swift` name
+      Story 3.1 as origin and reference subsequent altering stories.
+
+acs_verified: '9/9'
+acs_breakdown:
+  AC-1: >-
+    PASS — `apple/Torven/Popover/VendorCard.swift` created with
+    `struct VendorCard: View` (line 25), `let vendor: VendorInfo`
+    stored property (line 26), file header comment (lines 1-21) names
+    Story 3.1 as origin and forward-references Story 3.2 (ForEach
+    wrap) and Story 3.3 (tap → AccountPicker). Constructor injection
+    discipline observed — no `@EnvironmentObject` was present in the
+    original Story 3.1 shape (the @EnvironmentObject + @State on
+    lines 28-29 are Story 3.3 additions per its own AC-3).
+  AC-2: >-
+    PASS — Body (lines 31-56) contains the three mandated regions:
+    (a) header HStack with `Text(vendor.displayName).font(.headline)`
+    + `Image(systemName: vendor.isConfigured ? "checkmark.circle.fill"
+    : "circle")` colored green/secondary; (b) metrics HStack with
+    `Text("$— this period")` and `Text("—% used")` both at
+    `.subheadline` size and `.secondary` foreground — em-dash U+2014
+    verified via byte inspection; (c) sparkline placeholder
+    `Rectangle().fill(Color.secondary.opacity(0.15)).frame(height: 24)`
+    on lines 53-55.
+  AC-3: >-
+    PASS — Body matches the AC-3 canonical reference structurally
+    (VStack(alignment: .leading, spacing: 6) → HStack header → HStack
+    metrics → Rectangle placeholder → .padding(12) →
+    .background(RoundedRectangle(cornerRadius: 8)
+    .fill(Color.gray.opacity(0.08)))). Dev chose cornerRadius=8 +
+    opacity=0.08 (midpoint of the AC-3 4-12pt range) — documented in
+    Dev Agent Record §3. Variations within the permitted bounds.
+  AC-4: >-
+    PASS — `PopoverView.swift` (at the Story 3.1 snapshot, prior to
+    Story 3.2's ForEach refactor) declared `@EnvironmentObject var
+    coreBridge: TorvenCoreBridge` and rendered the `if-let openRouter`
+    block exactly per the canonical AC-4 snippet: padding-horizontal
+    16 + padding-top 4 + Spacer at the bottom. Defensive `if-let`
+    means a missing OpenRouter slug leaves only the header visible —
+    no crash. Story 3.2 subsequently replaces this `if-let` with a
+    `ForEach` — that lifecycle is exactly what AC-4 anticipated.
+  AC-5: >-
+    PASS — `TorvenApp.swift:28` already applied
+    `.environmentObject(coreBridge)` to `MenuBarContent { }` since
+    Stories 1.5/2.1. T4 verified by inspection (Dev Agent Record §1)
+    — no modification needed; SwiftUI propagates @EnvironmentObject
+    through the hierarchy automatically. Dev correctly chose to
+    document the dispensation rather than make a no-op edit.
+  AC-6: >-
+    PASS — Dev Change Log records `make build-core` OK + `xcodegen
+    generate` OK + `xcodebuild -project Torven.xcodeproj -scheme
+    Torven -configuration Debug build` = BUILD SUCCEEDED. `.app`
+    path registered:
+    `~/Library/Developer/Xcode/DerivedData/Torven-bbiaguwbzdwsygecvijfcylbmtjb/Build/Products/Debug/Torven.app`.
+    The `-project Torven.xcodeproj` defensive flag against stale
+    `apple/Torven 2.xcodeproj/` retained — same precaution from
+    Story 2.3 gate.
+  AC-7: >-
+    PASS — Smoke confirmed by Lorenzo (Dev Agent Record §1, end):
+    icon visible on menu bar, popover opens with "Torven" header +
+    one card showing displayName "OpenRouter" + `circle` gray icon
+    (because Story 1.5 hardcodes isConfigured=false) + em-dash
+    placeholders + Rectangle sparkline. App alive 30s without crash
+    (PID logged). Restante do popover visivelmente vazio — preserved
+    space for Story 3.2's ForEach.
+  AC-8: >-
+    PASS — QA verified `cargo test --workspace` (225 pass), `cargo
+    clippy --workspace --all-targets -- -D warnings` (clean), `cargo
+    fmt --check` (clean) on the current working tree. Note: 225
+    includes 6 new Story 3.3 tests on top of the 219 baseline that
+    Story 3.1 itself preserved (Story 3.1 made zero Rust changes).
+  AC-9: >-
+    PASS (optional, delivered) — `#Preview` block on lines 78-86 with
+    two `VendorCard` instances (OpenRouter configured=true, OpenAI
+    configured=false) wrapped in VStack + padding + frame(width:
+    328) + environmentObject(TorvenCoreBridge()) to satisfy the
+    Story 3.3 additions on the same file. SwiftUI Canvas can render
+    both states without launching the full app.
+
+build_gate:
+  cargo_test_workspace: 'green (225 passing, 9 ignored)'
+  cargo_clippy: 'green (no warnings, --workspace --all-targets -D warnings)'
+  cargo_fmt: 'green (--check)'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED per dev evidence — Story 3.1 snapshot at lifecycle moment)'
+
+files_reviewed:
+  created:
+    - apple/Torven/Popover/VendorCard.swift
+  modified:
+    - apple/Torven/Popover/PopoverView.swift (Story 3.1 layer — @EnvironmentObject + if-let openRouter VendorCard rendering)
+  not_modified_by_design:
+    - apple/Torven/MenuBar/MenuBarContent.swift (T4 dispensation — environmentObject already propagated since Story 2.1)
+    - apple/Torven/TorvenApp.swift (line 28 already applies .environmentObject(coreBridge))
+    - apple/Torven/Views/Preservation/VendorListView_Story15.swift (preservation; intocado)
+    - crates/torven-core/* (Story 3.1 does not touch Rust)
+
+issues: []
+
+recommendations:
+  - >-
+    NEXT: this gate clears Story 3.1 for the consolidated Wave 3 batch
+    PR. The OpenRouter `if-let` block in `PopoverView.swift` reviewed
+    here is the Story 3.1 layer in the chained dev session; the
+    working-tree current state already has the Story 3.2 ForEach
+    replacement landed (which the 3.2 gate validates separately). Both
+    layers are coherent — no rewrite request from QA.
+  - >-
+    OUT-OF-SCOPE (informational): the stale untracked
+    `apple/Torven 2.xcodeproj/` from Wave 2 is still present at branch
+    root. Story 2.1 gate flagged the same. @devops should sweep it
+    during the Wave 3 PR housekeeping per the Story 2.1 gate
+    recommendation.
+
+next_step: '@devops *push (consolidated Wave 3 PR — after 3.1/3.2/3.3 gate verdicts all PASS)'

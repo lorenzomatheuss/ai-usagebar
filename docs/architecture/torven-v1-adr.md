@@ -1471,18 +1471,19 @@ Estas 5 questões precisam ser fechadas pelo @ux-design-expert antes de @sm cria
 
 ### UX-Q1 — Layout SwiftUI específico: MenuBarExtra constraints e NSPopover sizing
 
-O PRD pede 5 cards no popover ~360×420px. Mas SwiftUI MenuBarExtra com `.window` style tem constraints específicas:
-- Tamanho **mínimo recomendado** Apple: 250×280
-- Tamanho **máximo razoável** (sem feel "janela secundária"): ~480×640
-- Cada VendorCard típico (header + status pill + main metric + delta + sparkline 7d) tem altura natural ~90-110px no SwiftUI. 5 × 90 = 450px + header 50px = 500px → spill em 420px height.
+**STATUS: CLOSED 2026-06-04 (Story 3.2) — Opção A adotada (380×540).**
 
-**Opções:**
-- **A.** Aumentar popover para 380×540 (acomoda 5 cards full + header sem scroll)
+**Decisão:** `.frame(width: 380, height: 540)` em `PopoverView.swift`.
+
+**Razão empírica:** Smoke run com 360×420 (PRD starting point) revelou que o último card da lista canônica `get_vendor_list()` (Gemini) ficou cortado/exigiu scroll. O salto para 380×540 acomoda os 5 cards full (Anthropic, OpenAI, OpenRouter, Z.AI, Gemini) com spacing 8pt entre cards e padding horizontal 16pt sem nenhum scroll/clipping. Re-smoke confirmado por Lorenzo no mesmo dia. NFR-1 (popover open <50ms warm) — abertura subjetivamente instantânea em ambos smoke runs; benchmark formal via Instruments adiado para Wave 4 quando Swift Charts entrar (real carga de render).
+
+**Histórico das opções consideradas (mantido para audit trail):**
+- **A.** Aumentar popover para 380×540 (acomoda 5 cards full + header sem scroll) ← **adotada**
 - **B.** Cards colapsáveis (1 expanded ~120px + 4 collapsed ~50px = 320px + header = 370px)
 - **C.** Scroll vertical com 360×420 fixo (UX feio em popover macOS)
 - **D.** "Compact mode" / "Expanded mode" toggle (Cmd+E expandable)
 
-Decisão @ux + considerar trade-off com NFR-1 (popover open <50ms warm — mais conteúdo = mais work no mount).
+Opções B/C/D dispensadas: B muda padrão de interação (não justificável só para sizing), C confirmado UX feio no smoke 360×420, D é feature creep fora do escopo Wave 3.
 
 ### UX-Q2 — Estados visuais com Swift Charts (cores semânticas, animação, dark mode)
 
