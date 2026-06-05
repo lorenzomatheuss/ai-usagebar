@@ -69,6 +69,11 @@ apple/Torven.xcodeproj/*
 !apple/Torven.xcodeproj/xcshareddata
 apple/Torven.xcodeproj/xcshareddata/*
 !apple/Torven.xcodeproj/xcshareddata/xcschemes
+# Xcode duplicate-on-conflict artifacts (e.g. "Torven 2.xcodeproj", "Torven 3.xcodeproj").
+# These appear when xcodegen regenerates the project while the canonical
+# Torven.xcodeproj is locked by an open Xcode/Finder process. Always disposable —
+# the canonical project is regenerated from `apple/project.yml`.
+apple/Torven [0-9]*.xcodeproj/
 apple/Frameworks/
 
 # UniFFI generated bindings
