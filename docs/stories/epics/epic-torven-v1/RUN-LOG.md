@@ -107,13 +107,114 @@ Histórico narrativo das waves do epic `epic-torven-v1` (pivot macOS native). Co
 
 ---
 
+## Wave 3 — Vendor Cards + Account Picker (2026-06-04, merge `1d08ea7`, PR #13)
+
+**Goal:** 5 vendor cards no popover + AccountPicker inline sheet + multi-account FFI real (Q5=A confirmado).
+
+**Status:** DONE
+
+**Stories entregues:**
+
+| Story | Title | QA |
+|---|---|---|
+| 3.1 | VendorCard skeleton (OpenRouter first) | PASS 10/10 |
+| 3.2 | ForEach 5 vendors + UX-Q1 closure (380×540) | PASS |
+| 3.3 | AccountPicker inline sheet + set_active_account FFI | PASS |
+
+**Decisões cravadas:**
+- UX-Q1 fechada: frame 380×540 (Stories 3.2)
+- Q5=A: FFI nova `AccountInfo` + `get_accounts_for_vendor` + `set_active_account` (Story 3.3)
+- AR-8 (NSStatusItem multi-monitor): parkado para Wave 7
+
+**Dispensation carregada para Wave 4:**
+- Story 3.3: `set_active_account` in-memory only; persistência em config.toml → Story 4.0
+
+**Métricas pós-Wave 3:** 225 tests passing (workspace), xcodebuild BUILD SUCCEEDED.
+
+---
+
+## Wave 4 — Main Window + Swift Charts — Draft (2026-06-05)
+
+**Status:** Draft (aguardando @po validação)
+**Stories:** 8 (4.0, 4.0.5, 4.1-4.6)
+**Effort total:** ~6d (4-5 sessões)
+**Decisões cravadas:** WAVE4-D1 a D7 (ver handoffs `handoff-2026-06-05-wave4-kickoff-master-to-sm.yaml` e `handoff-2026-06-05-wave4-story-4_0_5-master-to-sm.yaml`)
+
+### Stories
+
+| Story | Title | Effort |
+|---|---|---|
+| 4.0 | Persistir active-account map em config.toml via toml_edit | XS (~0.5d) |
+| 4.0.5 | FFI ffi_query_aggregated — temporal-bucket aggregation (S) — owner: @data-engineer | S (~0.5d) |
+| 4.1 | Main Window shell + invocação dupla (popover button + cmd+1) | M (~1d) |
+| 4.2 | Date range picker (7d/30d/Custom) bound to HistoryQuery FFI | S (~0.5d) |
+| 4.3 | Swift Charts foundation + Stacked area cost chart | M (~1d) |
+| 4.4 | Per-vendor line chart grid (5 mini-charts) | M (~1d) |
+| 4.5 | Request count chart (segunda métrica: Cost / Requests tab) | S (~0.5d) |
+| 4.6 | Budget burn indicator (gauge progress) + budgets em config.toml | M (~1d) |
+
+### Decisões Wave 4
+
+- **D1:** Invocação Main Window = botão "Show History…" + cmd+1 via KeyboardShortcuts SPM
+- **D2:** Story 4.0 fecha dispensation Wave 3 antes do Main Window
+- **D3:** Date range = 7d / 30d / Custom (DatePicker .compact built-in)
+- **D4:** Todos os 4 chart types: stacked area cost + per-vendor grid + request count + budget burn
+- **D5:** KeyboardShortcuts (sindresorhus, SPM) para hotkey global
+- **D6:** Budgets hard-coded em config.toml [budgets]; Wave 5 torna editável via Settings UI
+
+### Riscos cross-story Wave 4
+
+- ~~UDL shape para time-series: `AggregatedUsage` pode precisar extensão para suportar buckets temporais (Story 4.3)~~ **RESOLVIDO — ver Wave 4 Risk #1 abaixo**
+- macOS Accessibility permission para hotkey global (Story 4.1)
+- Timezone UTC vs local para reset mensal de budget (Story 4.6)
+- Top bar com 3 pickers (DateRange + Aggregate/Per-vendor + Cost/Requests): layout pode ficar denso (Story 4.5)
+- `Gauge` view macOS 13 compatibility (Story 4.6)
+
+## Wave 4 — Risk #1 resolved (2026-06-05)
+
+**Gap identificado:** A UDL original (`ffi_query_snapshots`) expõe apenas raw events paginados. Stories 4.3/4.4/4.5 precisavam de agregação temporal (buckets hora/dia/semana) para alimentar Swift Charts sem client-side aggregation em Swift — o que violaria NFR-1 (~43K events em 30d via loop paginado seria inaceitável).
+
+**Decisão WAVE4-D7 (Lorenzo, cravada):** Path A — inserir Story 4.0.5 entre 4.0 e 4.1. Adicionar `ffi_query_aggregated(...)` ao `namespace torven_core {}` com `dictionary TimeBucket` + `enum BucketStrategy`. SQLite `GROUP BY bucket_start` server-side é ~100× mais performático que client-side e a mesma API será reutilizada por Wave 6 evals.
+
+**Referência:** `docs/stories/epics/epic-torven-v1/4.0.5.ffi-query-aggregated.story.md` — owner: @data-engineer (Dara)
+
+### Next
+
+@po batch validation (story-draft-checklist 10-point) para as 8 stories 4.0, 4.0.5, 4.1-4.6.
+
+## Wave 4 — PO batch validation (2026-06-05)
+
+**Verdict agregado:** 8/8 stories **GO** (todas com score ≥ 7/10). 4 GO clean + 4 GO conditional pós-fix.
+
+| Story | Score | Verdict | Pós-fix |
+|---|---|---|---|
+| 4.0 persist-active-account-config | 10/10 | GO clean | — |
+| 4.0.5 ffi-query-aggregated | 10/10 | GO clean | — |
+| 4.1 main-window-shell | 10/10 | GO clean | — |
+| 4.2 date-range-picker | 8 → 10 | GO (F-1) | `MainWindowViewModel` = state-holder puro; FFI delegada para 4.3 |
+| 4.3 swift-charts-stacked-area | 9 → 10 | GO (F-1) | `aggregate_by_vendor` → `ffi_query_aggregated`; `AggregatedSample.fromFFI([TimeBucket])` |
+| 4.4 per-vendor-chart-grid | 10/10 | GO clean | — |
+| 4.5 request-count-chart | 9 → 10 | GO (F-2) | Risk #1 reescrito: `TimeBucket.request_count` é a fonte canônica |
+| 4.6 budget-burn-indicator | 8 → 10 | GO (F-1, F-3) | Rust-side aggregation reusando 4.0.5; dep 4.0.5 adicionada |
+
+**Fixes aplicados:**
+- **F-1** — Drift de FFI surface: removidas todas as referências a `aggregate_by_vendor` (função fictícia que nunca existiu no UDL); harmonizado para `ffi_query_aggregated` + `TimeBucket[]` (Story 4.0.5).
+- **F-2** — Risk obsoleto da 4.5 sobre `requestCount` reescrito; fonte canônica documentada.
+- **F-3** — Dependência 4.0.5 adicionada na 4.6.
+
+**Todas as 8 stories agora estão Status: Ready.** Wave 4 desbloqueada para @dev. Owner sugerido para 4.0.5: @data-engineer (Dara); demais: @dev (Dex).
+
+### Next
+
+@dev inicia Wave 4 pela Story 4.0 (Rust-only, XS, fecha Wave 3 dispensation). Ou @data-engineer inicia em paralelo pela 4.0.5 (não há dependência técnica direta entre 4.0 e 4.0.5).
+
+---
+
 ## Próximas waves (planejamento ativo)
 
 | Wave | Goal | Status |
 |---|---|---|
-| **3** | Vendor Cards + Account Picker | 🟡 KICKOFF (handoff master→sm pendente) |
-| **4** | Main Window + Swift Charts | pendente |
-| **5** | AI Insights UI + Settings | pendente |
+| **5** | AI Insights UI + Settings editável | pendente |
 | **6** | CI eval gate + observability | pendente |
 | **7** | Polish + Release (Sparkle + notarization) | pendente |
 
