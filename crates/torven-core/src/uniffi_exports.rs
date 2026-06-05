@@ -29,18 +29,31 @@
 //!   `crate::UniFfiTag`. The crate root re-exports `ping` so the generated
 //!   code can resolve `crate::ping`.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::config::{Config, account_id};
 use crate::history::{self, AccountFilter, HistoryDb, UsageSnapshot};
 use crate::insights::client::RealAnthropicClient;
 use crate::insights::{
     CancelHandle, InsightsCallback, InsightsContext, InsightsError, InsightsOutput, LlmClient,
 };
 use crate::keychain::{self, SecretStore, blob_bytes_from_store, set_blob_bytes_for_store};
+use crate::vendor::VendorId;
 
 static HISTORY_DB: OnceLock<Mutex<Option<HistoryDb>>> = OnceLock::new();
 static SECRET_STORE: OnceLock<Result<Arc<dyn SecretStore>, String>> = OnceLock::new();
+
+/// In-memory active-account map populated by `set_active_account` and read by
+/// `get_accounts_for_vendor`. Keyed by vendor slug (e.g. "openrouter"), value
+/// is the deterministic `account_id(...)`. Story 3.3 (Wave 3) keeps this
+/// purely in-process; Wave 4 may persist it to `config.toml`.
+static ACTIVE_ACCOUNTS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn active_accounts() -> &'static Mutex<HashMap<String, String>> {
+    ACTIVE_ACCOUNTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Smoke-test function exposed via FFI.
 ///
@@ -422,6 +435,137 @@ impl InsightsClient {
     }
 }
 
+// =====================================================================
+// Story 3.3 (Wave 3) — Account picker FFI surface
+// =====================================================================
+
+/// Mirrors `dictionary AccountInfo` in `torven_core.udl`. Used by the SwiftUI
+/// AccountPicker (Story 3.3) to list configured accounts for a vendor with
+/// the active marker reflecting the in-process state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountInfo {
+    pub id: String,
+    pub label: String,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum AccountFfiError {
+    #[error("vendor slug not recognized")]
+    VendorNotFound,
+    #[error("account id not found in vendor's configured accounts")]
+    AccountNotFound,
+    #[error("account storage error")]
+    Storage,
+}
+
+/// Map the vendor slug crossed through FFI back to the strongly-typed
+/// `VendorId` used in `config::Config`. Returns `None` for slugs that don't
+/// participate in multi-account (`anthropic`, `openai`, `gemini` in v1.0).
+fn vendor_id_from_slug(slug: &str) -> Option<VendorId> {
+    match slug {
+        "anthropic" => Some(VendorId::Anthropic),
+        "openai" => Some(VendorId::Openai),
+        "zai" => Some(VendorId::Zai),
+        "openrouter" => Some(VendorId::Openrouter),
+        // "gemini" — not a VendorId variant yet; multi-account support arrives
+        // when Gemini gets a full Rust vendor module. For now `None`.
+        _ => None,
+    }
+}
+
+/// Inner helper isolated for testability — no globals, deterministic.
+///
+/// Returns the `AccountInfo` rows for `vendor_slug`. Empty `Vec` is a valid
+/// "no accounts configured" result (e.g. for Anthropic/OpenAI/Gemini, or for
+/// OpenRouter/Z.AI before the user has populated `[[vendor.accounts]]`).
+fn get_accounts_for_vendor_inner(
+    config: &Config,
+    active_map: &HashMap<String, String>,
+    vendor_slug: &str,
+) -> Vec<AccountInfo> {
+    let Some(vendor) = vendor_id_from_slug(vendor_slug) else {
+        return Vec::new();
+    };
+    let Some(accounts) = config.accounts.get(&vendor) else {
+        return Vec::new();
+    };
+    if accounts.is_empty() {
+        return Vec::new();
+    }
+
+    let default_active = account_id(vendor, &accounts[0].name);
+    let active_id = active_map
+        .get(vendor_slug)
+        .cloned()
+        .unwrap_or(default_active);
+
+    accounts
+        .iter()
+        .map(|acct| {
+            let id = account_id(vendor, &acct.name);
+            let is_active = id == active_id;
+            AccountInfo {
+                id,
+                label: acct.name.clone(),
+                is_active,
+            }
+        })
+        .collect()
+}
+
+/// Inner helper isolated for testability.
+fn set_active_account_inner(
+    config: &Config,
+    active_map: &mut HashMap<String, String>,
+    vendor_slug: &str,
+    account_id_param: &str,
+) -> Result<(), AccountFfiError> {
+    let vendor = vendor_id_from_slug(vendor_slug).ok_or(AccountFfiError::VendorNotFound)?;
+    let accounts = config
+        .accounts
+        .get(&vendor)
+        .ok_or(AccountFfiError::VendorNotFound)?;
+    let exists = accounts
+        .iter()
+        .any(|acct| account_id(vendor, &acct.name) == account_id_param);
+    if !exists {
+        return Err(AccountFfiError::AccountNotFound);
+    }
+    active_map.insert(vendor_slug.to_string(), account_id_param.to_string());
+    Ok(())
+}
+
+/// FFI entry: returns configured `AccountInfo` rows for `vendor_id`.
+///
+/// Story 3.3: graceful degradation on config load failure — returns empty
+/// `Vec` (matches the contract that "no accounts" is not an error). The
+/// AccountPicker renders an "Only N accounts configured" affordance.
+pub fn get_accounts_for_vendor(vendor_id: String) -> Vec<AccountInfo> {
+    let config = match Config::load() {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let Ok(active_map) = active_accounts().lock() else {
+        return Vec::new();
+    };
+    get_accounts_for_vendor_inner(&config, &active_map, &vendor_id)
+}
+
+/// FFI entry: swap the in-memory active account for `vendor_id` to
+/// `account_id`. Validates the vendor exists and `account_id` is in the
+/// configured `Vec<Account>`; otherwise raises the matching `AccountFfiError`.
+pub fn set_active_account(
+    vendor_id: String,
+    account_id_param: String,
+) -> Result<(), AccountFfiError> {
+    let config = Config::load().map_err(|_| AccountFfiError::Storage)?;
+    let mut active_map = active_accounts()
+        .lock()
+        .map_err(|_| AccountFfiError::Storage)?;
+    set_active_account_inner(&config, &mut active_map, &vendor_id, &account_id_param)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,5 +624,101 @@ mod tests {
         let a = get_vendor_list();
         let b = get_vendor_list();
         assert_eq!(a, b, "get_vendor_list must be deterministic");
+    }
+
+    // -----------------------------------------------------------------
+    // Story 3.3 (Wave 3) — Account picker FFI tests
+    // -----------------------------------------------------------------
+
+    fn config_with_two_openrouter_accounts() -> Config {
+        let toml = r#"
+[[openrouter.accounts]]
+name = "Personal"
+
+[[openrouter.accounts]]
+name = "ClienteAcme"
+"#;
+        Config::load_from_str(toml).expect("fixture config must parse")
+    }
+
+    #[test]
+    fn get_accounts_for_vendor_returns_two_rows_with_default_active() {
+        let config = config_with_two_openrouter_accounts();
+        let active_map = HashMap::new();
+        let rows = get_accounts_for_vendor_inner(&config, &active_map, "openrouter");
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].is_active, "first account is the default active");
+        assert!(!rows[1].is_active);
+        assert_eq!(rows[0].label, "Personal");
+        assert_eq!(rows[1].label, "ClienteAcme");
+    }
+
+    #[test]
+    fn set_active_account_swaps_to_second_row() {
+        let config = config_with_two_openrouter_accounts();
+        let mut active_map = HashMap::new();
+        // Discover the id for the second account.
+        let rows = get_accounts_for_vendor_inner(&config, &active_map, "openrouter");
+        let target_id = rows[1].id.clone();
+
+        set_active_account_inner(&config, &mut active_map, "openrouter", &target_id)
+            .expect("swap to existing account must succeed");
+
+        let rows_after = get_accounts_for_vendor_inner(&config, &active_map, "openrouter");
+        assert!(!rows_after[0].is_active, "first row is no longer active");
+        assert!(rows_after[1].is_active, "second row is now active");
+    }
+
+    #[test]
+    fn get_accounts_for_unknown_vendor_returns_empty_not_error() {
+        let config = config_with_two_openrouter_accounts();
+        let active_map = HashMap::new();
+        let rows = get_accounts_for_vendor_inner(&config, &active_map, "gemini");
+        assert!(
+            rows.is_empty(),
+            "gemini has no multi-account support in v1.0"
+        );
+    }
+
+    #[test]
+    fn set_active_account_unknown_vendor_returns_vendor_not_found() {
+        let config = config_with_two_openrouter_accounts();
+        let mut active_map = HashMap::new();
+        let err = set_active_account_inner(&config, &mut active_map, "nonexistent", "anything")
+            .expect_err("unknown vendor must error");
+        assert!(matches!(err, AccountFfiError::VendorNotFound));
+    }
+
+    #[test]
+    fn set_active_account_unknown_account_returns_account_not_found() {
+        let config = config_with_two_openrouter_accounts();
+        let mut active_map = HashMap::new();
+        let err = set_active_account_inner(
+            &config,
+            &mut active_map,
+            "openrouter",
+            "openrouter-does-not-exist",
+        )
+        .expect_err("unknown account must error");
+        assert!(matches!(err, AccountFfiError::AccountNotFound));
+    }
+
+    #[test]
+    fn vendor_id_from_slug_maps_all_four_known_vendors() {
+        assert!(matches!(
+            vendor_id_from_slug("anthropic"),
+            Some(VendorId::Anthropic)
+        ));
+        assert!(matches!(
+            vendor_id_from_slug("openai"),
+            Some(VendorId::Openai)
+        ));
+        assert!(matches!(vendor_id_from_slug("zai"), Some(VendorId::Zai)));
+        assert!(matches!(
+            vendor_id_from_slug("openrouter"),
+            Some(VendorId::Openrouter)
+        ));
+        assert_eq!(vendor_id_from_slug("gemini"), None);
+        assert_eq!(vendor_id_from_slug("bogus"), None);
     }
 }

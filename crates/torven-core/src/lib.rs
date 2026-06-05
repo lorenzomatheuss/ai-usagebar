@@ -50,10 +50,11 @@ pub use insights::{
     InsightsError, InsightsOutput, VendorAggregate,
 };
 pub use uniffi_exports::{
-    HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot, InsightsClient, KeychainFfiError,
-    PagedHistorySnapshots, UsageSnapshotInput, VendorInfo, ffi_init_history, ffi_keychain_get_blob,
-    ffi_keychain_set_blob, ffi_query_snapshots, ffi_record_snapshot, ffi_run_retention_janitor,
-    get_vendor_list, ping,
+    AccountFfiError, AccountInfo, HistoryAccountFilterMode, HistoryFfiError, HistorySnapshot,
+    InsightsClient, KeychainFfiError, PagedHistorySnapshots, UsageSnapshotInput, VendorInfo,
+    ffi_init_history, ffi_keychain_get_blob, ffi_keychain_set_blob, ffi_query_snapshots,
+    ffi_record_snapshot, ffi_run_retention_janitor, get_accounts_for_vendor, get_vendor_list, ping,
+    set_active_account,
 };
 
 uniffi::include_scaffolding!("torven_core");
