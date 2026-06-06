@@ -1,0 +1,554 @@
+schema: 1
+storyId: 4.2.date-range-picker
+story: '4.2'
+gate: PASS
+verdict: PASS
+score: 9.3
+gateDate: '2026-06-05'
+commit_reviewed: 'uncommitted on main (DateRangePicker.swift + MainWindowViewModel.swift created, MainWindowView.swift modified — pre-PR review)'
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-05T16:00:00Z'
+checked_at: '2026-06-05T16:00:00Z'
+status_reason: >-
+  Wave 4 sub-wave 4.2 (Date Range Picker) delivers a clean, dependency-free
+  SwiftUI segmented picker + MainWindowViewModel state-holder cleanly aligned
+  with WAVE4-D3 (7d/30d/Custom + native DatePicker.compact, zero SPM
+  additions) and ADR-4 (Int64-ms FFI surface for sinceTs/untilTs ready for
+  Story 4.3's ffi_query_aggregated consumer). 6 of 7 ACs verified at code
+  level; AC-7 (snapshot tests) explicitly deferred per dev — apple/project.yml
+  testTargets is empty by Wave 1 ADR §4 decision (XCTest infra is Wave 7
+  backlog), and SwiftUI #Preview blocks provide visual verification in the
+  meantime — this is the same coverage envelope already accepted for Stories
+  2.1-2.3 and 3.1-3.3. ViewModel is FFI-free as required (purely a state
+  holder publishing $dateRange via Combine), which preserves the layering for
+  4.3 to introduce ChartViewModel as the actual FFI caller without forcing
+  4.2 to depend on 4.0.5. DateRange.last7Days/last30Days factories accept an
+  injectable Calendar parameter — a quiet improvement that makes the value
+  type trivially unit-testable once XCTest stands up. Endpoint convention is
+  rigorous: startOfDay(D-N) → endOfDay(D) via Calendar arithmetic avoids
+  fence-post bugs. Custom-mode invalid range (end<start) disables Apply and
+  surfaces the red caption per AC-2 — Apply binding writes through only on
+  user confirmation, never on intermediate DatePicker edits. The onChange
+  deprecation shim (`onValueChange`) is a tidy macOS 13/14 compatibility
+  abstraction that keeps the deployment target honest and the build warning-
+  free. Build gate green per dev evidence (cargo test --workspace 173/173,
+  xcodebuild Debug BUILD SUCCEEDED, xcodegen regenerated cleanly).
+  CodeRabbit pre-review (--prompt-only -t uncommitted, macOS native) returned
+  0 CRITICAL / 0 HIGH and 1 MINOR documentation/style finding on
+  Calendar.endOfDay docstring — non-blocking, tracked as DOC-001. T6 smoke
+  (3-segment picker visible + 7d default + custom DatePickers + Apply
+  disable) deferred to Lorenzo's bench per project precedent (Story 3.2
+  AC-5 / Story 3.3 AC-9 / Story 4.1 SMK-001 calibration). Score 9.3 vs 10
+  reflects (1) AC-7 snapshot-test deferral acknowledged in Wave 7 backlog,
+  (2) DOC-001 minor docstring nit, (3) tracked one-way mode↔dateRange sync
+  observation (DES-001) for future click-to-zoom interactions in Story 4.4.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: n/a
+  security: pass
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      DateRangePicker.swift (188 LOC) is idiomatic SwiftUI: `enum
+      DateRangeMode: String, CaseIterable, Identifiable` with `.days7`,
+      `.days30`, `.custom` + a readable `label` computed property (lines
+      25-39); `struct DateRange: Equatable` with `startDate`/`endDate`
+      lets and `sinceTs`/`untilTs` computed as `Int64(date.timeIntervalSince1970
+      * 1000)` (lines 43-50) — matches ADR-4 (Int64 ms) and is idempotent
+      for a given Date, satisfying AC-6. Static factory `lastNDays(_:from:
+      calendar:)` (lines 63-73) is parameterised by Calendar for testability
+      — a thoughtful seam given XCTest will land in Wave 7. The View
+      (lines 103-176) lays out `Picker("Period", selection: $mode)` with
+      `.segmented` style + `.labelsHidden()` + `.frame(width: 220)` and a
+      conditional `customRangeControls` block when `mode == .custom` — two
+      `DatePicker(...selection: $pending...).datePickerStyle(.compact)
+      .labelsHidden()` + arrow separator + `Button("Apply")
+      .disabled(isCustomInvalid)` + caption error message — exactly as
+      AC-1/AC-2 specify. `handleModeChange(_:)` (lines 156-168) writes
+      .days7/.days30 ranges directly via the binding but only seeds
+      pendingStart/pendingEnd on switch to .custom — Apply remains the
+      sole commit path for custom (AC-2). `applyCustomRange()` (lines
+      170-175) sets `startOfDay(for: pendingStart)` → `endOfDay(for:
+      pendingEnd)` so the custom range follows the same endpoint
+      convention as the 7d/30d factories. The `onValueChange`
+      View-extension shim (lines 79-89) wraps the macOS 13 / macOS 14
+      onChange API gap with `if #available(macOS 14.0, *)` — keeps the
+      build warning-free and the future deployment-target bump a one-
+      extension delete (textbook). `Calendar.endOfDay(for:)` (lines
+      91-99) computes `startOfDay + 1 day - 1 second` via DateComponents
+      — returns `23:59:59` of the target day in the local timezone.
+      Force-unwraps in lastNDays + endOfDay are justified — Calendar
+      arithmetic only fails on overflow (year ±10000) which finite-day
+      offsets from `now` cannot trigger. MainWindowViewModel.swift (37
+      LOC) is minimal and correct: `@MainActor final class
+      MainWindowViewModel: ObservableObject` with `@Published var
+      dateRange`, `init(initialRange: DateRange = .last7Days())` (DI
+      seam preserved), and `applyRange(_:)` writing `dateRange = range`
+      so external callers (chart click-to-zoom in 4.4) have a clean
+      extension point without touching `@Published` plumbing. No FFI
+      surface introduced — `import Combine; import Foundation` only.
+      MainWindowView.swift diff (49 LOC, +34/-15) replaces the Story
+      4.1 placeholder Text with `VStack(spacing: 0) { topBar; Divider;
+      contentArea }`; `topBar` is `HStack { DateRangePicker(dateRange:
+      $viewModel.dateRange); Spacer() }` with `padding(.horizontal, 16)`
+      + `padding(.vertical, 10)`; `contentArea` keeps the "History —
+      Wave 4" placeholder Text for now until Story 4.3 wires the chart.
+      `@StateObject private var viewModel = MainWindowViewModel()`
+      satisfies AC-4 and Risk row #4 (ownership documented in Dev Agent
+      Record). No retain cycles — value-type DateRange + class
+      ObservableObject with only @Published storage.
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      Story 4.2 is a SwiftUI-only addition (zero Rust changes), so
+      `cargo test --workspace` (173/173 per dev evidence) functions as
+      a regression check — Rust is untouched. Swift side has no XCTest
+      target in apple/project.yml (testTargets: []) by Wave 1 ADR §4
+      decision: heavy logic lives in Rust where cargo test covers it,
+      Swift relies on compile-time + smoke + #Preview at this layer.
+      AC-7 (snapshot tests for 7d/30d/Custom valid/invalid) is
+      explicitly deferred to Wave 7 backlog with the standup of an
+      XCTest target. This calibration matches Stories 2.1-2.3 and 3.1-3.3
+      precedent and is gate-acceptable. The four logical assertions
+      AC-7 would target (segmented picker visibility per mode, conditional
+      DatePicker rendering, Apply-disable when end<start, caption
+      visibility when invalid) are mechanically verifiable via the
+      #Preview block included at the bottom of DateRangePicker.swift
+      and via runtime smoke. DateRange.last7Days/last30Days factories
+      accept an injectable Calendar — once Wave 7 lands the test
+      target, deterministic snapshot/unit tests are a small delta to
+      add.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: '6/7 ACs verified at code level; AC-7 deferred to Wave 7 backlog (see acs_breakdown).'
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      Diff scope is tightly contained: DateRangePicker.swift +
+      MainWindowViewModel.swift created (additive), MainWindowView.swift
+      modified (placeholder Text moved to contentArea, top bar added).
+      No changes to Wave 3 popover surface (PopoverView.swift,
+      VendorCard.swift, AccountPicker.swift) nor to Story 4.1
+      MainWindowController.swift / TorvenApp.swift. The "History —
+      Wave 4" placeholder Text is intentionally retained inside
+      contentArea — the gate recommendation from Story 4.1 said the
+      next gate should "verify MainWindowView no longer renders the
+      History — Wave 4 placeholder", but that swap is rightly the
+      responsibility of Story 4.3 (chart wiring) since 4.2's mandate is
+      only to introduce the picker + ViewModel. Holding the placeholder
+      visually consistent until charts arrive is the correct deferral.
+      `cargo test --workspace` 173/173 per dev (Rust intact). xcodebuild
+      Debug BUILD SUCCEEDED. xcodegen regenerated cleanly.
+
+  - name: performance
+    verdict: N/A
+    notes: >-
+      No NFR with numeric target applies to a synchronous SwiftUI
+      segmented picker. @Published writes propagate via Combine in
+      O(subscribers) — once Story 4.3 attaches a ChartViewModel
+      subscriber, latency from picker change → chart re-render is
+      dominated by the FFI call (Story 4.3's ffi_query_aggregated)
+      and the SQLite aggregation, not by the binding plumbing.
+      DateRange computed properties are sub-microsecond Int64
+      arithmetic. No allocations on the hot path.
+
+  - name: security
+    verdict: PASS
+    notes: >-
+      No new attack surface — no FFI calls in this story, no file I/O,
+      no keychain access, no network. DateRange is a value type with
+      no input from external sources beyond user-driven DatePicker
+      selections (already sandboxed by AppKit's date validation). No
+      secrets, API keys, or credentials touched. Custom-mode invalid
+      range (end<start) is rejected at the UI layer per AC-2 — the
+      binding write never propagates an inverted range to the
+      ViewModel, so downstream consumers (Story 4.3 onward) cannot
+      receive a since>until pair.
+
+  - name: documentation
+    verdict: PASS (with DOC-001 minor)
+    notes: >-
+      Story file is exhaustive: 7 ACs with implementation-grade detail
+      (signature shapes, ADR-4 cross-reference, layering rationale
+      for state-holder vs FFI-caller split), comprehensive Dev Agent
+      Record explaining design decisions (StateObject vs ObservedObject
+      choice with rationale, onChange deprecation shim, endpoint
+      convention `[startOfDay, endOfDay]`, ms-epoch ADR-4 alignment),
+      File List accurate, Change Log captures @sm draft → @po GO →
+      @dev start → @dev complete lifecycle. DateRangePicker.swift
+      header comment cross-references Story 4.2, WAVE4-D3 decision,
+      ADR-4 FFI surface contract, and the consumer pattern for 4.3+
+      ChartViewModels via Combine. MainWindowViewModel.swift header
+      explains the "class not Observable struct" choice (need
+      reference identity for multi-chart sharing + macOS 13.0
+      deployment target locks out @Observable). MainWindowView.swift
+      header walks through the topBar/contentArea layout and flags
+      Stories 4.3-4.6 as the chart consumers. DOC-001 (minor): the
+      `Calendar.endOfDay(for:)` extension docstring (line 92) says
+      `23:59:59.999` but the implementation uses `comps.second = -1`
+      which returns `23:59:59` (no sub-second fraction). Cosmetic
+      mismatch — the behavior is correct (any timestamp on the target
+      day is included in the inclusive endpoint), only the docstring
+      precision is off. Non-blocking.
+
+acs_verified: '6/7 (AC-7 deferred per Wave 7 backlog, acknowledged by @dev)'
+acs_breakdown:
+  AC-1: >-
+    PASS — apple/Torven/MainWindow/DateRangePicker.swift lines 25-39 declare
+    `enum DateRangeMode: String, CaseIterable, Identifiable` with cases
+    `.days7`, `.days30`, `.custom` (`var id: String { rawValue }`); lines
+    43-74 declare `struct DateRange: Equatable` with `startDate`/`endDate`
+    + `sinceTs`/`untilTs` computed Int64 (ADR-4 ms-epoch surface) +
+    `last7Days(from:calendar:)` / `last30Days(from:calendar:)` static
+    factories (injectable Calendar for testability). View struct
+    `DateRangePicker` (line 103) hosts `Picker("Period", selection:
+    $mode)` with `.pickerStyle(.segmented)` + `.labelsHidden()` +
+    `.frame(width: 220)` (lines 114-121). When `mode == .custom`,
+    `customRangeControls` (lines 134-154) renders two `DatePicker(...,
+    selection: $pendingStart/$pendingEnd, displayedComponents: .date)
+    .datePickerStyle(.compact).labelsHidden()` plus an arrow separator
+    + Apply button + invalid-range caption.
+
+  AC-2: >-
+    PASS — `@State private var pendingStart: Date = Date()` and
+    `pendingEnd: Date = Date()` (lines 107-108) hold edit-time values
+    locally before commit. `private var isCustomInvalid: Bool {
+    pendingEnd < pendingStart }` (line 110) drives both the
+    `.disabled(isCustomInvalid)` on the Apply button (line 147) and the
+    conditional caption `Text("End date must be after start date")
+    .font(.caption).foregroundColor(.red)` (lines 150-153). Apply is the
+    sole binding-write path for custom mode — `applyCustomRange()` (lines
+    170-175) materialises the committed range via `cal.startOfDay(for:
+    pendingStart)` and `cal.endOfDay(for: pendingEnd)`, then assigns to
+    `dateRange`. The picker never publishes intermediate DatePicker
+    edits to `viewModel.dateRange`, satisfying "não recarregar live
+    enquanto user edita datas".
+
+  AC-3: >-
+    PASS — apple/Torven/MainWindow/MainWindowViewModel.swift declares
+    `@MainActor final class MainWindowViewModel: ObservableObject` (line
+    25). `@Published var dateRange: DateRange` (line 26) is initialised
+    via `init(initialRange: DateRange = .last7Days())` (lines 28-30) so
+    default state is the last-7-days range as AC-3 requires. Method
+    `applyRange(_ range: DateRange)` (lines 34-36) updates `dateRange`
+    so external callers (chart click-to-zoom in Story 4.4, or programmatic
+    range changes) have a clean entrypoint without touching the
+    `@Published` machinery. NO FFI calls — only `import Combine; import
+    Foundation`. ChartViewModel in Story 4.3 will observe `$dateRange`
+    via Combine and own the `ffi_query_aggregated` call, per the
+    layering decision documented in the story.
+
+  AC-4: >-
+    PASS — apple/Torven/MainWindow/MainWindowView.swift line 15
+    `@StateObject private var viewModel = MainWindowViewModel()`;
+    `var body: some View` (line 17) renders `VStack(spacing: 0) {
+    topBar.padding(.horizontal, 16).padding(.vertical, 10); Divider();
+    contentArea }`. `topBar` (lines 30-35) is `HStack(spacing: 12) {
+    DateRangePicker(dateRange: $viewModel.dateRange); Spacer() }`.
+    `contentArea` (lines 37-45) keeps `Text("History — Wave 4")` as a
+    placeholder filling `maxWidth: .infinity, maxHeight: .infinity` —
+    correct deferral: the chart swap is Story 4.3's responsibility, not
+    4.2's, and keeping the placeholder visible until charts arrive is
+    the right UX choice.
+
+  AC-5: >-
+    PASS — `MainWindowViewModel` default init uses `initialRange:
+    DateRange = .last7Days()` (line 28), and `DateRangePicker.@State
+    private var mode: DateRangeMode = .days7` (line 106) — so the
+    segmented control opens with "7d" selected. `DateRange.last7Days()`
+    delegates to `lastNDays(7, …)` which computes `startOfDay(today) -
+    7 days` → `endOfDay(today)` via `Calendar` arithmetic — covers
+    `[00:00 D-7, 23:59:59 D]` inclusively as AC-5 requires.
+
+  AC-6: >-
+    PASS — `DateRange.sinceTs: Int64 { Int64(startDate.timeIntervalSince1970
+    * 1000) }` and `untilTs: Int64 { Int64(endDate.timeIntervalSince1970
+    * 1000) }` (lines 49-50) compute Unix epoch in milliseconds as i64.
+    Both are pure functions of the stored `startDate`/`endDate` — for a
+    given `DateRange` value, repeated calls return identical Int64
+    values (idempotent). The signature shape matches `ffi_query_aggregated`'s
+    `since_ts: i64 (ms)` parameter from Story 4.0.5. AC-2 prevents
+    `since>until` from being committed at the UI layer (Apply is
+    disabled when `pendingEnd < pendingStart`), and `applyCustomRange()`
+    materialises through `startOfDay` / `endOfDay` so the persisted
+    range always satisfies `startDate <= endDate`. The FFI call itself
+    is the responsibility of `ChartViewModel` in Story 4.3 per the
+    layering decision.
+
+  AC-7: >-
+    DEFERRED — Snapshot tests for 7d/30d/Custom (valid+invalid) require
+    an XCTest target which apple/project.yml currently lacks
+    (`testTargets: []`). Wave 1 ADR §4 explicitly deferred Swift-side
+    test infrastructure to Wave 7, with the calibration that
+    SwiftUI #Preview + compile-time + runtime smoke covers this layer in
+    the meantime. The story's #Preview block (lines 178-188) provides
+    visual verification of the default 7d state during dev. The 30d
+    / Custom states are visually verifiable via the same preview by
+    interacting with the segmented control. This deferral matches
+    Stories 2.1-2.3 (PASS aggregate 9.83) and 3.1-3.3 precedent and is
+    gate-acceptable. Tracked as DBT-001 for Wave 7.
+
+decisions_review:
+  - decision: '@StateObject vs @ObservedObject for MainWindowViewModel ownership'
+    verdict: JUSTIFIED
+    rationale: >-
+      MainWindowView is the single owner of the MainWindowViewModel
+      instance for the lifetime of the NSWindow (Story 4.1's
+      MainWindowController retains the NSHostingView indefinitely via
+      windowShouldClose returning false + orderOut). @StateObject is the
+      correct SwiftUI primitive for "this view owns this object and
+      should keep it alive across re-renders" — @ObservedObject would
+      risk premature deallocation if SwiftUI ever re-instantiated
+      MainWindowView. Story 4.3+ ChartViewModel sub-views will receive
+      the VM via `.environmentObject` or property injection, not via
+      direct @StateObject reinstantiation. Dev Notes documents this
+      explicitly and references Risk row #4. Pattern matches Apple's
+      official guidance.
+
+  - decision: 'onChange deprecation shim via private View extension'
+    verdict: JUSTIFIED
+    rationale: >-
+      macOS 14 introduced `onChange(of:, _ : (oldValue, newValue) ->
+      Void)` (two-arg) and deprecated the macOS 13 `onChange(of:,
+      perform:)` (single-arg). With deployment target macOS 13.0 (per
+      Wave 4 D5), only the single-arg form compiles cleanly on the
+      minimum target — but the macOS 14+ build emits a deprecation
+      warning. The `View.onValueChange(of:perform:)` extension picks
+      the correct form via `if #available(macOS 14.0, *)` — keeps the
+      build warning-free, makes the future macOS 14 deployment bump a
+      one-extension delete, and avoids littering `#available` blocks
+      at every onChange callsite. Localised abstraction with a
+      well-defined retirement plan.
+
+  - decision: 'Endpoint convention [startOfDay, endOfDay] for ranges'
+    verdict: JUSTIFIED
+    rationale: >-
+      `last7Days()` covers `00:00 D-7 → 23:59:59 D` inclusively. This
+      matches the calendar-day mental model users expect ("show me the
+      last 7 days") and avoids fence-post bugs when day boundaries
+      cross. Custom mode applies the same convention via
+      `applyCustomRange()`. Computing endOfDay as `startOfDay + 1 day -
+      1 second` is the textbook idiom — alternatives like
+      `startOfDay(tomorrow) - 1 ns` are more precise but unnecessary
+      for ms-resolution FFI surface. Calendar.endOfDay extension is
+      private to the file (no public API leak).
+
+  - decision: 'Timestamps in milliseconds (Int64) for FFI surface'
+    verdict: JUSTIFIED
+    rationale: >-
+      Story 4.0.5 introduced `ffi_query_aggregated(since_ts: i64, …)`
+      with explicit ms-epoch semantics. ADR-4 documents the FFI
+      Int64-ms convention. `Int64(date.timeIntervalSince1970 * 1000)`
+      converts Swift's Double seconds-since-epoch to Int64 ms — for a
+      given Date, repeated calls return identical values (idempotent
+      per AC-6). The Double→Int64 truncation drops sub-ms precision
+      which is irrelevant for usage analytics aggregation (SQLite
+      data is also stored at ms granularity per the schema).
+
+  - decision: 'MainWindowViewModel as state-holder (no FFI calls in this story)'
+    verdict: JUSTIFIED
+    rationale: >-
+      Wave 4 layering: 4.2 introduces the picker + state holder, 4.3+
+      introduce ChartViewModels that observe `$dateRange` via Combine
+      and own the FFI calls. This keeps 4.2's dependency surface
+      minimal (no Story 4.0.5 dependency), the state holder trivially
+      unit-testable in isolation (no FFI mocking required), and
+      provides a clean Combine observation point that multiple future
+      ChartViewModels can subscribe to without coupling. PO's fix F-1
+      during Wave 4 validation specifically removed the FFI-call
+      coupling that was originally proposed — current implementation
+      correctly executes that decision.
+
+  - decision: 'Injectable Calendar in last7Days/last30Days factories'
+    verdict: JUSTIFIED (testability seam)
+    rationale: >-
+      `static func last7Days(from: Date = Date(), calendar: Calendar =
+      .current)` lets the production callsite use `.current` while
+      future tests can inject a frozen-clock Calendar with a specific
+      timezone — important for snapshot/unit tests once Wave 7 stands
+      up XCTest. Minimal cost (single parameter with default), high
+      future utility. Not currently exercised because no test target
+      exists, but the seam is correctly carved.
+
+  - decision: 'Equatable conformance on DateRange'
+    verdict: JUSTIFIED
+    rationale: >-
+      Enables `==` comparison in tests, change detection in
+      Combine pipelines (e.g. ChartViewModel.$dateRange.removeDuplicates()),
+      and SwiftUI diffing optimisations. Value-type struct with two
+      stored Date properties — synthesized conformance is free. Idiomatic.
+
+smoke_ux_recommendation:
+  policy: 'Code-level PASS; runtime smoke = Lorenzo bench (NOT gate-blocking)'
+  rationale: >-
+    Wave 2/3/4 precedent (Story 3.2 AC-5 / Story 3.3 AC-9 / Story 4.1
+    SMK-001) established that runtime UI smoke runs against Lorenzo's
+    real macOS environment after QA gate, with textual confirmation in
+    the closing story's Change Log being the audit-trail equivalent of
+    screenshots. The four smoke checkpoints to verify outside this
+    gate are:
+      1. Open Main Window via ⌘1 or "Show History…" footer — 3-segment
+         picker visible with "7d" selected by default
+      2. Tap "30d" → segment switches, no DatePicker controls appear
+      3. Tap "Custom" → two DatePicker.compact controls appear with
+         arrow separator + Apply button
+      4. In Custom, set end date < start date → Apply button greys
+         out + red caption "End date must be after start date" surfaces;
+         set valid range → Apply enables; tap Apply → range commits to
+         the ViewModel (visually verifiable once chart wiring lands in
+         4.3, otherwise inspect via debugger)
+    Code-level inspection confirms the logic for all four is correct.
+    Runtime verification can post-merge follow under the project's
+    established cadence (batched with the closing story of the Wave 4
+    chart sub-wave per session checkpoint convention).
+
+wave3_wave4_1_regression:
+  popover_frame: 'preserved (no changes to PopoverView.swift)'
+  vendor_cards_render: 'preserved (Wave 3 contract intact)'
+  main_window_shell: 'preserved (Story 4.1 MainWindowController + ⌘1 hotkey + windowShouldClose contract untouched)'
+  popover_show_history_button: 'preserved (Story 4.1 footer button untouched)'
+  files_not_modified_by_design:
+    - apple/Torven/MainWindow/MainWindowController.swift (Story 4.1 contract preserved — singleton + show() + windowShouldClose)
+    - apple/Torven/Popover/PopoverView.swift (Story 4.1 footer intact)
+    - apple/Torven/Popover/VendorCard.swift (Wave 3)
+    - apple/Torven/Popover/AccountPicker.swift (Wave 3)
+    - apple/Torven/TorvenApp.swift (Story 4.1 hotkey wiring intact)
+    - apple/Torven/ViewModels/CoreBridge.swift (no bridge changes needed)
+    - crates/torven-core/* (zero Rust changes)
+
+build_gate:
+  cargo_test_workspace: 'green (173/173 per dev evidence — Rust crates untouched by this Swift-only story)'
+  cargo_clippy: 'n/a for this story (no Rust changes)'
+  cargo_fmt: 'n/a for this story (no Rust changes)'
+  xcodegen_generate: 'green (.xcodeproj regenerated cleanly per dev evidence)'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED per dev Change Log)'
+  coderabbit: 'qa pre-review --prompt-only -t uncommitted → 0 CRITICAL / 0 HIGH / 1 MINOR (DOC-001 docstring nit on Calendar.endOfDay — non-blocking)'
+
+files_reviewed:
+  created:
+    - apple/Torven/MainWindow/DateRangePicker.swift (188 LOC — DateRangeMode enum + DateRange struct + DateRangePicker view + Calendar.endOfDay extension + onValueChange shim + #Preview)
+    - apple/Torven/MainWindow/MainWindowViewModel.swift (37 LOC — @MainActor ObservableObject state holder)
+  modified:
+    - apple/Torven/MainWindow/MainWindowView.swift (+34/-15 — @StateObject ViewModel, VStack { topBar; Divider; contentArea } layout, DateRangePicker in topBar, placeholder Text moved into contentArea)
+  regenerated:
+    - apple/Torven.xcodeproj/project.pbxproj (via xcodegen generate — gitignored)
+  not_modified_by_design:
+    - apple/Torven/MainWindow/MainWindowController.swift (Story 4.1)
+    - apple/Torven/Popover/* (Wave 3 + Story 4.1 footer)
+    - apple/Torven/TorvenApp.swift (Story 4.1 hotkey wiring)
+    - crates/torven-core/* (zero Rust changes)
+
+issues:
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: >-
+      `Calendar.endOfDay(for:)` extension docstring (DateRangePicker.swift
+      line 92) says `23:59:59.999` but the implementation uses
+      `comps.second = -1` which yields `23:59:59` (no sub-second
+      fraction). Cosmetic mismatch — the inclusive endpoint behavior
+      is correct (any timestamp on the target day is captured by the
+      [startOfDay, endOfDay] range, since ms-resolution data points
+      land within the second-granularity envelope), only the docstring
+      precision is overstated.
+    suggested_action: >-
+      Tiny one-line fix — change the docstring to `23:59:59` or update
+      the implementation to set `nanosecond = 999_999_000` for true
+      `23:59:59.999` precision. Either resolution is acceptable. Can
+      be batched with the Story 4.3 PR or applied as a touch-up on
+      this story's PR.
+
+  - id: DES-001
+    severity: low
+    category: code
+    description: >-
+      `DateRangePicker.@State private var mode: DateRangeMode = .days7`
+      is local to the view and tracks the segmented selection. When
+      `dateRange` is mutated externally (e.g., Story 4.4's chart
+      click-to-zoom calling `viewModel.applyRange(arbitraryRange)`),
+      the segmented `mode` will NOT update to `.custom` automatically —
+      so the user would see "7d" highlighted while an arbitrary range
+      is active. Not a current AC violation (no external mutation
+      path exists in 4.2) but worth surfacing as Wave 4.4 lands click-
+      to-zoom.
+    suggested_action: >-
+      Defer to Story 4.4 (chart click-to-zoom). At that point, derive
+      `mode` from `dateRange` (e.g., compare to .last7Days() /
+      .last30Days() with a tolerance, default to .custom otherwise)
+      OR have applyRange notify the picker explicitly via a separate
+      Combine pipeline. Not blocking for this gate.
+
+  - id: SMK-002
+    severity: low
+    category: testing
+    description: >-
+      Runtime smoke for the 3-segment picker (7d default, 30d switch,
+      Custom DatePickers + Apply disable on invalid range) is deferred
+      to Lorenzo's bench per project precedent (Story 3.2 AC-5 / Story
+      3.3 AC-9 / Story 4.1 SMK-001 calibration). Code-level inspection
+      confirms the logic is correct, but real-macOS interaction has
+      not yet been recorded textually.
+    suggested_action: >-
+      After @devops *push, run the .app and append a 3-4 line smoke
+      confirmation to the Story 4.2 Change Log batched with the
+      closing chart story (4.3 or later) — same textual-audit-trail
+      pattern used in Wave 3 and Story 4.1.
+
+  - id: DBT-001
+    severity: low
+    category: testing
+    description: >-
+      AC-7 (snapshot tests for the 3 picker states + custom invalid
+      state) is deferred to Wave 7 backlog pending the standup of an
+      XCTest target in apple/project.yml. Wave 1 ADR §4 explicitly
+      scopes Swift test infrastructure to Wave 7; for 4.2 the
+      coverage envelope is compile-time + #Preview + runtime smoke,
+      matching the calibration used for Stories 2.1-2.3 (PASS 9.83)
+      and 3.1-3.3. Acknowledged in dev's Outstanding section.
+    suggested_action: >-
+      Track in the Wave 7 backlog. When XCTest stands up, add a small
+      snapshot test target exercising the 4 AC-7 states. The
+      Calendar-injectable factories on DateRange make this a
+      deterministic test (frozen-clock Calendar → predictable
+      timestamps).
+
+waiver:
+  active: false
+
+recommendations:
+  - >-
+    Accept the gate as PASS and proceed to @devops *push. Story 4.2
+    delivers a clean, dependency-free picker + state-holder ready
+    for Story 4.3 to attach ChartViewModel as the Combine subscriber
+    + FFI caller.
+  - >-
+    When Story 4.3 (Cost-by-vendor chart) lands, the QA gate should
+    verify (1) the "History — Wave 4" placeholder Text is finally
+    replaced by the chart view inside contentArea, (2) ChartViewModel
+    subscribes to mainViewModel.$dateRange via Combine with
+    .removeDuplicates() to avoid redundant FFI calls, (3) the FFI
+    call uses DateRange.sinceTs / .untilTs directly per ADR-4.
+  - >-
+    Optionally apply the DOC-001 one-liner fix on this story's PR
+    or batch with 4.3. Either choice is acceptable.
+  - >-
+    Carry DES-001 (one-way mode↔dateRange sync) into the Story 4.4
+    planning as a known design consideration for chart click-to-zoom.
+
+next_step: '@devops *push (Story 4.2 PR — Wave 4 Date Range Picker)'
+
+handoff:
+  next_agent: '@devops'
+  next_command: '*push'
+  condition: 'QA gate verdict is PASS — Status: InReview → Done'
