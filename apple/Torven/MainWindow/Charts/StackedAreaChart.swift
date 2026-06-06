@@ -40,29 +40,31 @@
 //  - `accessibilityReduceMotion` is on macOS 13.0; AC-7 uses the value
 //    directly in the `.animation` modifier.
 //
+//  ## Story 4.4 cross-story modification (AC-5)
+//
+//  The optional `selectedVendor: String?` parameter (defaults to `nil`) was
+//  added by Story 4.4 to support the "click mini-chart in Per-vendor grid
+//  → filter the Aggregate stacked area to that vendor only" interaction.
+//  Default `nil` keeps Story 4.3 callers source-compatible. When non-nil,
+//  only that vendor's samples are rendered. The vendor color palette was
+//  also promoted from a `private` file-level constant here to
+//  `AggregatedSample.swift` as the shared `chartVendorColorMapping` so the
+//  new `MiniVendorChart` can reuse it without duplicating the declaration.
+//
 
 import Charts
 import SwiftUI
-
-// MARK: - Vendor color mapping
-
-/// Brand-aligned colors for the 5 supported vendors. Story 4.3 AC-3.
-///
-/// `KeyValuePairs` (not `[String: Color]`) because Swift Charts consumes
-/// `chartForegroundStyleScale` order-sensitively — the legend renders in
-/// declaration order. A dictionary's iteration order isn't guaranteed.
-private let vendorColorMapping: KeyValuePairs<String, Color> = [
-    "openrouter": Color(red: 0.55, green: 0.36, blue: 0.96),  // purple
-    "anthropic":  Color(red: 0.94, green: 0.49, blue: 0.22),  // orange
-    "openai":     Color(red: 0.10, green: 0.52, blue: 0.36),  // dark green
-    "zai":        Color(red: 0.20, green: 0.51, blue: 0.93),  // blue
-    "gemini":     Color(red: 0.62, green: 0.62, blue: 0.62),  // grey (reserved)
-]
 
 // MARK: - StackedAreaChart
 
 struct StackedAreaChart: View {
     let chartData: ChartData
+
+    /// Story 4.4 AC-5: when non-nil, restricts the stacked area to a single
+    /// vendor so the Aggregate view reflects the selection driven by
+    /// `PerVendorGrid`. Default `nil` = render every vendor (Story 4.3
+    /// behaviour).
+    var selectedVendor: String? = nil
 
     // AC-7: respect Reduce Motion — disables the implicit cross-fade Swift
     // Charts applies when the underlying data identity changes (e.g. range
@@ -76,7 +78,7 @@ struct StackedAreaChart: View {
 
     var body: some View {
         Group {
-            if chartData.isEmpty {
+            if visibleSamples.isEmpty {
                 emptyState
             } else {
                 chartView
@@ -85,11 +87,19 @@ struct StackedAreaChart: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Samples actually drawn after applying the optional `selectedVendor`
+    /// filter (Story 4.4 AC-5). When `selectedVendor` is `nil` this is the
+    /// full sample set — the Story 4.3 behaviour.
+    private var visibleSamples: [AggregatedSample] {
+        guard let selectedVendor else { return chartData.samples }
+        return chartData.samples.filter { $0.vendor == selectedVendor }
+    }
+
     // MARK: - Chart
 
     private var chartView: some View {
         Chart {
-            ForEach(chartData.samples) { sample in
+            ForEach(visibleSamples) { sample in
                 AreaMark(
                     x: .value("Time", sample.timestamp),
                     y: .value("Cost (USD)", sample.costUsd)
@@ -108,7 +118,7 @@ struct StackedAreaChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
         }
-        .chartForegroundStyleScale(vendorColorMapping)
+        .chartForegroundStyleScale(chartVendorColorMapping)
         .chartXAxis {
             AxisMarks(preset: .aligned)
         }
@@ -216,15 +226,17 @@ struct StackedAreaChart: View {
         }
 
         // Snap to closest sample timestamp so vertical line + annotation
-        // line up with a real bucket.
-        let closest = chartData.samples
+        // line up with a real bucket. Uses `visibleSamples` (post-filter) so
+        // when `selectedVendor` is non-nil the hover only locks onto buckets
+        // that actually contain that vendor.
+        let closest = visibleSamples
             .map(\.timestamp)
             .min(by: { abs($0.timeIntervalSince(raw)) < abs($1.timeIntervalSince(raw)) })
         hoveredTimestamp = closest
     }
 
     private func samplesAtHoveredTimestamp(_ timestamp: Date) -> [AggregatedSample] {
-        chartData.samples.filter { $0.timestamp == timestamp }
+        visibleSamples.filter { $0.timestamp == timestamp }
     }
 
     // MARK: - Hover annotation card
@@ -239,7 +251,7 @@ struct StackedAreaChart: View {
             ForEach(samples) { sample in
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(color(for: sample.vendor))
+                        .fill(chartVendorColor(for: sample.vendor))
                         .frame(width: 8, height: 8)
                     Text(sample.vendor)
                         .font(.caption)
@@ -260,17 +272,6 @@ struct StackedAreaChart: View {
                 .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
         )
         .frame(maxWidth: 220)
-    }
-
-    /// Looks up a vendor's chart color from the `vendorColorMapping`
-    /// KeyValuePairs. Returns gray if the vendor wasn't pre-registered
-    /// (defensive — should never trip since `ChartData.vendors` is derived
-    /// from the same FFI vendor strings that the palette enumerates).
-    private func color(for vendor: String) -> Color {
-        for (key, value) in vendorColorMapping where key == vendor {
-            return value
-        }
-        return .gray
     }
 }
 

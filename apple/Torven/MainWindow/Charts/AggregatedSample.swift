@@ -25,6 +25,57 @@
 //
 
 import Foundation
+import SwiftUI
+
+// MARK: - Vendor color mapping (shared chart infra)
+
+/// Brand-aligned colors for the 5 supported vendors. Originally defined in
+/// `StackedAreaChart.swift` (Story 4.3); promoted to shared scope in Story 4.4
+/// so `MiniVendorChart` (per-vendor grid) and `PerVendorGrid` (selection
+/// highlight border) can reuse the same palette without duplicating the
+/// declaration.
+///
+/// `KeyValuePairs` (not `[String: Color]`) because Swift Charts consumes
+/// `chartForegroundStyleScale` order-sensitively — the legend renders in
+/// declaration order. A dictionary's iteration order isn't guaranteed.
+///
+/// `internal` (default) visibility — accessible across all chart files in the
+/// `Torven` target. `lowercase` keys match the vendor strings returned by
+/// `ffi_query_aggregated` (Story 4.0.5).
+let chartVendorColorMapping: KeyValuePairs<String, Color> = [
+    "openrouter": Color(red: 0.55, green: 0.36, blue: 0.96),  // purple
+    "anthropic":  Color(red: 0.94, green: 0.49, blue: 0.22),  // orange
+    "openai":     Color(red: 0.10, green: 0.52, blue: 0.36),  // dark green
+    "zai":        Color(red: 0.20, green: 0.51, blue: 0.93),  // blue
+    "gemini":     Color(red: 0.62, green: 0.62, blue: 0.62),  // grey (reserved)
+]
+
+/// Looks up a vendor's chart color from `chartVendorColorMapping`. Returns
+/// gray if the vendor wasn't pre-registered (defensive — should never trip
+/// since `ChartData.vendors` is derived from the same FFI vendor strings
+/// that the palette enumerates).
+func chartVendorColor(for vendor: String) -> Color {
+    for (key, value) in chartVendorColorMapping where key == vendor {
+        return value
+    }
+    return .gray
+}
+
+/// Human-readable label for a vendor id. Used by `MiniVendorChart` header
+/// (Story 4.4) and any other chart that needs a display name without paying
+/// the cost of an FFI lookup into `VendorInfo`. Kept as a small switch
+/// (not a dictionary) so the compiler can warn if a new vendor id is added
+/// to the palette without a matching display name.
+func chartVendorDisplayName(_ vendorId: String) -> String {
+    switch vendorId {
+    case "openrouter": return "OpenRouter"
+    case "anthropic":  return "Anthropic"
+    case "openai":     return "OpenAI"
+    case "zai":        return "Z.AI"
+    case "gemini":     return "Gemini"
+    default:           return vendorId.capitalized
+    }
+}
 
 // MARK: - AggregatedSample
 
