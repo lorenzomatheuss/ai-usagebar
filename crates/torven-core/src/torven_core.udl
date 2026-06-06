@@ -178,6 +178,33 @@ enum AccountFfiError {
     "Storage",
 };
 
+// RefreshFfiError — Story 5.1 (Wave 5) — surface for `ffi_refresh_vendor`.
+// One variant per logical failure category so Swift can render a precise
+// status message (and Story 5.3 can decide between "re-auth", "retry", and
+// "ignore" affordances). The mapping from internal errors is intentionally
+// granular:
+//
+//   * CredentialMissing — Keychain blob absent (no account configured) or
+//     OAuth credentials file (`~/.claude/.credentials.json`,
+//     `~/.codex/auth.json`) does not exist. Distinct from NetworkError so
+//     the UI can prompt the user to configure Settings (Story 5.2).
+//   * NetworkError      — transport-layer failure (DNS, TLS, timeout,
+//     connection refused). Maps to AppError::Transport, which is the
+//     `is_transient()` bucket — Story 5.3 surfaces this as "retry".
+//   * ApiError          — non-2xx HTTP response. Vendor reached but
+//     returned 4xx/5xx (rate limit, auth expired, server outage).
+//   * ParseFailure      — 2xx but response shape unexpected. Signals
+//     undocumented-endpoint drift; loggable but not actionable for users.
+//   * StorageError      — `ffi_record_snapshot` failed (history.db
+//     uninitialized or SQLite I/O error).
+enum RefreshFfiError {
+    "CredentialMissing",
+    "NetworkError",
+    "ApiError",
+    "ParseFailure",
+    "StorageError",
+};
+
 // ---------------------------------------------------------------------------
 // Story 4.6 (Wave 4) — Budget burn surface.
 //
@@ -435,6 +462,39 @@ namespace torven_core {
     // failure, poisoned mutex) surface as `Storage`.
     [Throws=AccountFfiError]
     void set_active_account(string vendor_id, string account_id);
+
+    // Story 5.1 (Wave 5) — On-demand vendor refresh.
+    //
+    // Executes the vendor's fetcher end-to-end (credential lookup → HTTP
+    // request → response parse → snapshot write to `usage_snapshots`). Used
+    // by the Refresh button (Story 5.3) and, later, by an auto-refresh
+    // scheduler (Wave 5.5).
+    //
+    // `vendor_name` accepts the canonical slugs: "anthropic", "openai",
+    // "openrouter", "zai". Unknown slugs return `CredentialMissing` (and
+    // emit a `tracing::warn!` for diagnostics) rather than crashing.
+    //
+    // Authentication source by vendor:
+    //   * anthropic — OAuth file at `~/.claude/.credentials.json`
+    //     (maintained by the Claude CLI).
+    //   * openai    — OAuth file at `~/.codex/auth.json`
+    //     (maintained by the Codex CLI).
+    //   * openrouter / zai — API key in the macOS Keychain blob keyed by
+    //     vendor slug (per Story 1.20 — `MacKeychainStore` /
+    //     `ffi_keychain_get_blob`). Multi-account vendors use the active
+    //     account (the in-memory active map, default = first account).
+    //
+    // SECURITY: no credential material crosses this FFI surface as
+    // `string`. The function takes a `vendor_name` slug only; the secret
+    // never leaves the Rust side.
+    //
+    // `[Async]` lets the future drive the HTTP request without blocking
+    // the Swift main thread. The Rust implementation wraps the inner work
+    // in `async_compat::Compat` so `reqwest`/`tokio::time` find a tokio
+    // context inside UniFFI's UDL-mode polling driver (same pattern as
+    // `InsightsClient::request_insight_streaming` — Story 1.15).
+    [Async, Throws=RefreshFfiError]
+    void ffi_refresh_vendor(string vendor_name);
 
     // Story 4.6 (Wave 4) — Budget burn aggregation.
     //

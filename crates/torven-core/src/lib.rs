@@ -53,10 +53,10 @@ pub use insights::{
 pub use uniffi_exports::{
     AccountFfiError, AccountInfo, BucketStrategy, BudgetStatus, HistoryAccountFilterMode,
     HistoryFfiError, HistorySnapshot, InsightsClient, KeychainFfiError, PagedHistorySnapshots,
-    TimeBucket, UsageSnapshotInput, VendorBudgetStatus, VendorInfo, ffi_init_history,
-    ffi_keychain_get_blob, ffi_keychain_set_blob, ffi_query_aggregated, ffi_query_snapshots,
-    ffi_record_snapshot, ffi_run_retention_janitor, get_accounts_for_vendor, get_budget_status,
-    get_vendor_list, ping, set_active_account,
+    RefreshFfiError, TimeBucket, UsageSnapshotInput, VendorBudgetStatus, VendorInfo,
+    ffi_init_history, ffi_keychain_get_blob, ffi_keychain_set_blob, ffi_query_aggregated,
+    ffi_query_snapshots, ffi_record_snapshot, ffi_refresh_vendor, ffi_run_retention_janitor,
+    get_accounts_for_vendor, get_budget_status, get_vendor_list, ping, set_active_account,
 };
 
 uniffi::include_scaffolding!("torven_core");
