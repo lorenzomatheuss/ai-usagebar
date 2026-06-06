@@ -50,12 +50,19 @@ static SECRET_STORE: OnceLock<Result<Arc<dyn SecretStore>, String>> = OnceLock::
 
 /// In-memory active-account map populated by `set_active_account` and read by
 /// `get_accounts_for_vendor`. Keyed by vendor slug (e.g. "openrouter"), value
-/// is the deterministic `account_id(...)`. Story 3.3 (Wave 3) keeps this
-/// purely in-process; Wave 4 may persist it to `config.toml`.
+/// is the deterministic `account_id(...)`. Story 4.0 lazy-loads from
+/// `~/.config/torven/config.toml [active_accounts]` on first access so swaps
+/// persist across app restarts.
 static ACTIVE_ACCOUNTS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 fn active_accounts() -> &'static Mutex<HashMap<String, String>> {
-    ACTIVE_ACCOUNTS.get_or_init(|| Mutex::new(HashMap::new()))
+    ACTIVE_ACCOUNTS.get_or_init(|| {
+        let initial = match crate::config::default_config_path() {
+            Some(path) => crate::config::load_active_accounts(&path),
+            None => HashMap::new(),
+        };
+        Mutex::new(initial)
+    })
 }
 
 /// Smoke-test function exposed via FFI.
@@ -649,7 +656,22 @@ pub fn set_active_account(
     let mut active_map = active_accounts()
         .lock()
         .map_err(|_| AccountFfiError::Storage)?;
-    set_active_account_inner(&config, &mut active_map, &vendor_id, &account_id_param)
+    set_active_account_inner(&config, &mut active_map, &vendor_id, &account_id_param)?;
+
+    // Story 4.0 (AC-2): persist post-swap. Disk failure does NOT undo the
+    // in-memory swap nor propagate an error — the UX contract is that the
+    // active-account swap is instantaneous. Persistence is best-effort
+    // background semantics, surfaced as `warn!` for diagnostics.
+    if let Some(path) = crate::config::default_config_path() {
+        if let Err(e) = crate::config::save_active_accounts(&path, &active_map) {
+            tracing::warn!(
+                vendor = %vendor_id,
+                account = %account_id_param,
+                "set_active_account: failed to persist [active_accounts] to disk: {e}"
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -787,6 +809,49 @@ name = "ClienteAcme"
         )
         .expect_err("unknown account must error");
         assert!(matches!(err, AccountFfiError::AccountNotFound));
+    }
+
+    // -----------------------------------------------------------------
+    // Story 4.0 — Active-account persistence integration
+    // -----------------------------------------------------------------
+
+    /// AC-7 / AC-6: the in-memory mutation pipeline (swap via inner) +
+    /// `save_active_accounts` to a temp config produces a TOML that, when
+    /// reloaded via `load_active_accounts`, yields the same map — i.e. the
+    /// restart semantic Wave 4 expects.
+    #[test]
+    fn set_active_account_persists_and_reload_returns_same_map() {
+        use tempfile::NamedTempFile;
+
+        let f = NamedTempFile::new().unwrap();
+        let config = config_with_two_openrouter_accounts();
+        let mut active_map = HashMap::new();
+        let rows = get_accounts_for_vendor_inner(&config, &active_map, "openrouter");
+        let target_id = rows[1].id.clone();
+
+        set_active_account_inner(&config, &mut active_map, "openrouter", &target_id)
+            .expect("swap must succeed");
+        crate::config::save_active_accounts(f.path(), &active_map)
+            .expect("persistence must succeed");
+
+        // Direct file inspection — verify the [active_accounts] section
+        // contains the swapped pair.
+        let raw = std::fs::read_to_string(f.path()).unwrap();
+        assert!(
+            raw.contains("[active_accounts]"),
+            "expected [active_accounts] section:\n{raw}"
+        );
+        assert!(
+            raw.contains(&format!("openrouter = \"{target_id}\"")),
+            "expected vendor=account pair in TOML:\n{raw}"
+        );
+
+        // Simulate restart: reload from disk.
+        let reloaded = crate::config::load_active_accounts(f.path());
+        assert_eq!(
+            reloaded.get("openrouter").map(|s| s.as_str()),
+            Some(target_id.as_str())
+        );
     }
 
     #[test]

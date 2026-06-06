@@ -661,6 +661,115 @@ fn default_path() -> Option<PathBuf> {
     Some(proj.config_dir().join("config.toml"))
 }
 
+/// Resolve the user-level config path (`~/.config/torven/config.toml` on
+/// Linux, `~/Library/Application Support/torven/config.toml` on macOS).
+/// Returns `None` when no HOME-equivalent is resolvable. Exposed publicly so
+/// FFI call sites can persist runtime state (e.g. `[active_accounts]`)
+/// without re-resolving the path.
+pub fn default_config_path() -> Option<PathBuf> {
+    default_path()
+}
+
+// =====================================================================
+// Story 4.0 — Active-account persistence (toml_edit round-trip)
+// =====================================================================
+
+/// Persist the active-account map to `config.toml`, preserving comments and
+/// other sections. Uses an exclusive `flock` on a sidecar lock file to
+/// serialize concurrent writers (Settings overlay vs AccountPicker swap).
+///
+/// Schema written:
+/// ```toml
+/// [active_accounts]
+/// openrouter = "openrouter-personal"
+/// zai = "zai-default"
+/// ```
+///
+/// The map is reflected verbatim: stale keys present on disk but absent from
+/// `active_map` are removed. On filesystem error (disk full, permission
+/// denied, malformed pre-existing config) returns `AppError` so the caller
+/// can choose between `warn!` (FFI swap path) and propagation (offline tools).
+pub fn save_active_accounts(path: &Path, active_map: &HashMap<String, String>) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| AppError::io_at(parent, e))?;
+        }
+    }
+
+    // Per-config-file lock so parallel tests on distinct temp files never
+    // serialize on a shared sidecar.
+    let lock_path = active_accounts_lock_path(path);
+    let _lock = crate::cache::acquire_lock(&lock_path, std::time::Duration::from_secs(2))?;
+
+    let original = std::fs::read_to_string(path).unwrap_or_default();
+    let mut doc: DocumentMut = if original.trim().is_empty() {
+        DocumentMut::new()
+    } else {
+        original
+            .parse()
+            .map_err(|e: toml_edit::TomlError| AppError::Other(format!("config.toml: {e}")))?
+    };
+
+    // Drop stale keys first so the on-disk table mirrors the in-memory map.
+    {
+        let table = navigate_table(&mut doc, "active_accounts")?;
+        let existing: Vec<String> = table.iter().map(|(k, _)| k.to_string()).collect();
+        for k in existing {
+            if !active_map.contains_key(&k) {
+                table.remove(&k);
+            }
+        }
+    }
+    for (vendor_id, account_id_val) in active_map {
+        set_string(&mut doc, "active_accounts", vendor_id, account_id_val)?;
+    }
+
+    let bytes = doc.to_string();
+    crate::cache::atomic_write(path, bytes.as_bytes())?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            std::fs::set_permissions(path, perms).map_err(|e| AppError::io_at(path, e))?;
+        }
+    }
+    Ok(())
+}
+
+/// Load the `[active_accounts]` map from `config.toml`. Returns an empty
+/// `HashMap` if the file is missing, unparseable, or the section is absent —
+/// startup MUST be tolerant of every legitimate "no prior state" shape
+/// (fresh install, upgrade from a pre-4.0 release, manual config edit).
+pub fn load_active_accounts(path: &Path) -> HashMap<String, String> {
+    let Ok(s) = std::fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    let Ok(doc) = s.parse::<DocumentMut>() else {
+        return HashMap::new();
+    };
+    let Some(table) = doc.get("active_accounts").and_then(|i| i.as_table()) else {
+        return HashMap::new();
+    };
+    let mut out = HashMap::new();
+    for (k, v) in table.iter() {
+        if let Some(s) = v.as_str() {
+            out.insert(k.to_string(), s.to_string());
+        }
+    }
+    out
+}
+
+fn active_accounts_lock_path(config_path: &Path) -> PathBuf {
+    let fname = config_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("config");
+    config_path.with_file_name(format!(".{fname}.lock"))
+}
+
 // =====================================================================
 // Save with comment preservation (toml_edit round-trip)
 // =====================================================================
@@ -1067,5 +1176,109 @@ enabled = false
         assert!(!is_valid_api_key("sk or v1")); // space
         assert!(!is_valid_api_key("sk-or-!@#")); // specials
         assert!(!is_valid_api_key("")); // empty
+    }
+
+    // -----------------------------------------------------------------
+    // Story 4.0 — Active-account persistence
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn save_active_accounts_writes_section() {
+        let f = NamedTempFile::new().unwrap();
+        let mut map = HashMap::new();
+        map.insert("openrouter".to_string(), "openrouter-acct-2".to_string());
+        save_active_accounts(f.path(), &map).unwrap();
+        let s = std::fs::read_to_string(f.path()).unwrap();
+        assert!(
+            s.contains("[active_accounts]"),
+            "section header expected:\n{s}"
+        );
+        assert!(
+            s.contains("openrouter = \"openrouter-acct-2\""),
+            "key/value expected:\n{s}"
+        );
+    }
+
+    #[test]
+    fn save_load_roundtrip_two_vendors() {
+        let f = NamedTempFile::new().unwrap();
+        // Seed with an unrelated section + comment to verify preservation.
+        std::fs::write(f.path(), "# user comment\n[anthropic]\nenabled = true\n").unwrap();
+
+        let mut map = HashMap::new();
+        map.insert("openrouter".to_string(), "openrouter-personal".to_string());
+        map.insert("zai".to_string(), "zai-default".to_string());
+        save_active_accounts(f.path(), &map).unwrap();
+
+        let loaded = load_active_accounts(f.path());
+        assert_eq!(loaded.get("openrouter").unwrap(), "openrouter-personal");
+        assert_eq!(loaded.get("zai").unwrap(), "zai-default");
+
+        // Pre-existing fields preserved.
+        let s = std::fs::read_to_string(f.path()).unwrap();
+        assert!(s.contains("# user comment"), "user comment lost:\n{s}");
+        assert!(s.contains("[anthropic]"), "anthropic section lost:\n{s}");
+        assert!(s.contains("enabled = true"), "anthropic.enabled lost:\n{s}");
+    }
+
+    #[test]
+    fn load_active_accounts_missing_file_returns_empty() {
+        let missing = std::path::Path::new("/tmp/does-not-exist-torven-4.0");
+        let map = load_active_accounts(missing);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn load_active_accounts_missing_section_returns_empty() {
+        let f = write_toml(
+            r#"[anthropic]
+enabled = true
+"#,
+        );
+        let map = load_active_accounts(f.path());
+        assert!(map.is_empty(), "no [active_accounts] section => empty map");
+    }
+
+    #[test]
+    fn save_active_accounts_preserves_user_comments() {
+        let f = NamedTempFile::new().unwrap();
+        let initial = "# Minha config pessoal\n[anthropic]\n# chave primaria\nenabled = true\n";
+        std::fs::write(f.path(), initial).unwrap();
+
+        let mut map = HashMap::new();
+        map.insert("openrouter".to_string(), "openrouter-personal".to_string());
+        save_active_accounts(f.path(), &map).unwrap();
+
+        let after = std::fs::read_to_string(f.path()).unwrap();
+        assert!(
+            after.contains("# Minha config pessoal"),
+            "top-of-file comment lost:\n{after}"
+        );
+        assert!(
+            after.contains("# chave primaria"),
+            "inline comment lost:\n{after}"
+        );
+        assert!(
+            after.contains("[active_accounts]"),
+            "active_accounts section missing:\n{after}"
+        );
+    }
+
+    #[test]
+    fn save_active_accounts_removes_stale_entries() {
+        let f = NamedTempFile::new().unwrap();
+        let mut map = HashMap::new();
+        map.insert("openrouter".to_string(), "or-1".to_string());
+        save_active_accounts(f.path(), &map).unwrap();
+
+        // Persist a fresh map that no longer contains `openrouter`.
+        let mut map2 = HashMap::new();
+        map2.insert("zai".to_string(), "zai-1".to_string());
+        save_active_accounts(f.path(), &map2).unwrap();
+
+        let loaded = load_active_accounts(f.path());
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded.contains_key("zai"));
+        assert!(!loaded.contains_key("openrouter"));
     }
 }
