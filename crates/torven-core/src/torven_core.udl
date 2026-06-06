@@ -179,6 +179,40 @@ enum AccountFfiError {
 };
 
 // ---------------------------------------------------------------------------
+// Story 4.6 (Wave 4) — Budget burn surface.
+//
+// `get_budget_status` reads the optional `[budgets]` section from
+// `~/.config/torven/config.toml` and aggregates the current calendar month's
+// spending (server-side in Rust via SQLite). Swift renders the result through
+// `BudgetBurn.swift` as a gauge with verde/amarelo/vermelho thresholds.
+//
+// Risk #4 mitigation (from Story 4.6 doc): we MUST NOT expose
+// `HashMap<String, f64>` directly across UDL — uniffi does not generate a
+// stable Swift mapping for HashMap-of-primitives. Instead, the per-vendor
+// breakdown is a `sequence<VendorBudgetStatus>` (a vec of records). This is
+// the same pattern used by `sequence<VendorInfo>` (Story 1.5) and
+// `sequence<TimeBucket>` (Story 4.0.5).
+//
+// `monthly_usd_total` is nullable (`f64?`) because the user may configure
+// only per-vendor caps without a global cap. Maps to `Double?` in Swift.
+// ---------------------------------------------------------------------------
+
+dictionary VendorBudgetStatus {
+    string vendor_id;
+    f64 spent_usd;
+    f64 budget_usd;
+    f64 percent_used;
+};
+
+dictionary BudgetStatus {
+    f64 total_spent_usd;
+    f64? total_budget_usd;
+    f64 total_percent_used;
+    sequence<VendorBudgetStatus> per_vendor;
+    boolean has_budget;
+};
+
+// ---------------------------------------------------------------------------
 // Story 1.15 — AI Insights surface (AR-2 resolution §Decision 1).
 // ---------------------------------------------------------------------------
 
@@ -401,4 +435,27 @@ namespace torven_core {
     // failure, poisoned mutex) surface as `Storage`.
     [Throws=AccountFfiError]
     void set_active_account(string vendor_id, string account_id);
+
+    // Story 4.6 (Wave 4) — Budget burn aggregation.
+    //
+    // Reads the `[budgets]` section from `~/.config/torven/config.toml` and
+    // aggregates `usage_snapshots` for the current calendar month (UTC). All
+    // computation happens Rust-side so Swift consumes a single pre-shaped
+    // value — no client-side aggregation.
+    //
+    // Fast path: when no `[budgets]` is configured, returns `has_budget =
+    // false` and zeroed totals WITHOUT issuing the SQLite aggregation query
+    // (AC-4 optimisation). The SwiftUI `BudgetBurn` view inspects
+    // `has_budget` and renders `EmptyView()` in that case.
+    //
+    // Synchronous (no `[Async]`): the SQLite aggregation for a month of
+    // snapshots is fast (< 50ms even at NFR-1 worst-case ~43k events)
+    // because the query uses indexed `(vendor, ts)` lookups. Swift wraps
+    // the call in a `Task { }` like every other FFI in the chart pipeline.
+    //
+    // Errors are intentionally NOT exposed via `[Throws=...]`: a config
+    // parse failure or SQLite I/O error in this surface degrades to
+    // `has_budget = false` server-side so the gauge gracefully disappears
+    // (warning is emitted via `tracing::warn!` for diagnostics).
+    BudgetStatus get_budget_status();
 };

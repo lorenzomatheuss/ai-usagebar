@@ -33,6 +33,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::budgets::{self, BudgetConfig};
 use crate::config::{Config, account_id};
 use crate::history::{
     self, AccountFilter, BucketStrategy as HistoryBucketStrategy, HistoryDb,
@@ -674,6 +675,214 @@ pub fn set_active_account(
     Ok(())
 }
 
+// =====================================================================
+// Story 4.6 (Wave 4) — Budget burn FFI surface
+// =====================================================================
+
+/// Mirrors `dictionary VendorBudgetStatus` in `torven_core.udl`. One row in
+/// the per-vendor breakdown returned by [`get_budget_status`]. Only vendors
+/// that have a non-`None` entry in `[budgets.per_vendor]` appear here — a
+/// vendor with month-to-date spending but no configured cap is folded into
+/// `total_spent_usd` only.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VendorBudgetStatus {
+    pub vendor_id: String,
+    pub spent_usd: f64,
+    pub budget_usd: f64,
+    pub percent_used: f64,
+}
+
+/// Mirrors `dictionary BudgetStatus` in `torven_core.udl`. Single payload
+/// returned by [`get_budget_status`]; consumed by Swift's `BudgetBurn` view.
+///
+/// `has_budget = false` is the signal that the user has not configured any
+/// `[budgets]` entries — the SwiftUI view renders `EmptyView()` in that case
+/// and skips the SQLite aggregation entirely (AC-4 fast path).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BudgetStatus {
+    pub total_spent_usd: f64,
+    pub total_budget_usd: Option<f64>,
+    pub total_percent_used: f64,
+    pub per_vendor: Vec<VendorBudgetStatus>,
+    pub has_budget: bool,
+}
+
+impl BudgetStatus {
+    fn empty() -> Self {
+        Self {
+            total_spent_usd: 0.0,
+            total_budget_usd: None,
+            total_percent_used: 0.0,
+            per_vendor: Vec::new(),
+            has_budget: false,
+        }
+    }
+}
+
+/// Story 4.6 (Wave 4) — Aggregate the current calendar month's spending and
+/// compare to the user's configured budgets.
+///
+/// ## Flow
+///
+/// 1. Resolve the config path (`~/.config/torven/config.toml` on Linux,
+///    `~/Library/Application Support/torven/config.toml` on macOS) via
+///    [`config::default_config_path`].
+/// 2. Parse `[budgets]` via [`budgets::parse_budgets`]. If no budget is
+///    configured (`has_budget == false`), return `BudgetStatus::empty()`
+///    immediately — AC-4 fast path skips the SQLite query.
+/// 3. Compute `since_ts` = first instant of the current UTC month via
+///    [`budgets::month_start_utc_ms`]. `until_ts` = `now` (ms).
+/// 4. Run an inline SQL `SUM(cost_usd) GROUP BY vendor` query against
+///    `usage_snapshots`. Inline query (not [`history::query_aggregated`])
+///    because we don't need temporal buckets — only month-to-date totals
+///    per vendor. The decision is documented in the Story 4.6 Dev Agent
+///    Record.
+/// 5. Compute the global total (sum across all vendors), then for each
+///    vendor in `[budgets.per_vendor]` look up its spend and build a
+///    `VendorBudgetStatus`.
+///
+/// ## Error handling
+///
+/// Per the UDL declaration this function is NOT marked `[Throws=...]`. Any
+/// failure (config parse error, SQLite I/O) degrades to
+/// `BudgetStatus::empty()` with a `tracing::warn!` for diagnostics. The
+/// gauge disappears gracefully on the Swift side; users see no error popup
+/// (the failure is non-fatal — they can still inspect their charts).
+///
+/// If the SQLite history DB hasn't been initialised yet (early app
+/// startup), the function also returns empty — consistent with the gauge
+/// rendering nothing until data is available.
+pub fn get_budget_status() -> BudgetStatus {
+    // Resolve config path. None on a system with no HOME-equivalent: nothing
+    // to read, so no budget. Return empty gracefully.
+    let Some(config_path) = crate::config::default_config_path() else {
+        return BudgetStatus::empty();
+    };
+
+    // Parse the optional [budgets] section. A parse error here is logged but
+    // not propagated — the gauge degrades to empty.
+    let budget_cfg = match budgets::parse_budgets(&config_path) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            tracing::warn!(
+                "get_budget_status: failed to parse [budgets] in {}: {e}",
+                config_path.display()
+            );
+            return BudgetStatus::empty();
+        }
+    };
+
+    // Fast path: no budget configured → no SQLite query.
+    if !budget_cfg.has_budget() {
+        return BudgetStatus::empty();
+    }
+
+    // Aggregate the current UTC month. `since_ts` is the first instant of
+    // the calendar month (00:00:00.000 UTC of day 1); `until_ts` is `now`.
+    let since_ts = budgets::month_start_utc_ms();
+    let until_ts = chrono::Utc::now().timestamp_millis();
+
+    let spend_by_vendor = match aggregate_month_spend(since_ts, until_ts) {
+        Ok(map) => map,
+        Err(e) => {
+            tracing::warn!("get_budget_status: SQLite aggregation failed: {e}");
+            return BudgetStatus::empty();
+        }
+    };
+
+    build_status(&budget_cfg, &spend_by_vendor)
+}
+
+/// Inner helper: month-to-date `SUM(cost_usd) GROUP BY vendor`. Returns a
+/// map keyed by vendor slug. Vendors with no rows in the window are absent
+/// from the map (interpreted as `$0 spent`).
+///
+/// Returns `Err(HistoryFfiError::NotInitialized)` if the FFI history slot is
+/// empty — the caller treats that as "gauge unavailable yet" and returns
+/// empty.
+fn aggregate_month_spend(
+    since_ts: i64,
+    until_ts: i64,
+) -> Result<HashMap<String, f64>, HistoryFfiError> {
+    with_history_db(|db| {
+        let conn = db.connection()?;
+        let mut stmt = conn
+            .prepare(
+                "
+            SELECT vendor, COALESCE(SUM(cost_usd), 0.0) AS total
+            FROM usage_snapshots
+            WHERE ts >= ?1
+              AND ts <  ?2
+              AND cost_usd IS NOT NULL
+            GROUP BY vendor
+            ",
+            )
+            .map_err(history::HistoryError::Sqlite)?;
+        let rows = stmt
+            .query_map((since_ts, until_ts), |row| {
+                let vendor: String = row.get(0)?;
+                let total: f64 = row.get(1)?;
+                Ok((vendor, total))
+            })
+            .map_err(history::HistoryError::Sqlite)?;
+        let mut out: HashMap<String, f64> = HashMap::new();
+        for r in rows {
+            let (vendor, total) = r.map_err(history::HistoryError::Sqlite)?;
+            out.insert(vendor, total);
+        }
+        Ok(out)
+    })
+}
+
+/// Pure helper: combine the budget config with the spend-by-vendor map and
+/// emit the FFI payload. Extracted so the assembly logic is unit-testable
+/// without an FFI / SQLite setup.
+///
+/// Percent calculation: `(spent / budget) * 100`. When `budget == 0.0` (the
+/// user wants ANY spend to be over-budget), we return `f64::INFINITY` if
+/// `spent > 0` and `0.0` if `spent == 0`. The Swift side clamps the gauge
+/// value to `[0, 100]` for display.
+fn build_status(cfg: &BudgetConfig, spend_by_vendor: &HashMap<String, f64>) -> BudgetStatus {
+    let total_spent_usd: f64 = spend_by_vendor.values().sum();
+    let total_budget_usd = cfg.monthly_usd_total;
+    let total_percent_used = match total_budget_usd {
+        Some(b) if b > 0.0 => (total_spent_usd / b) * 100.0,
+        Some(_zero) if total_spent_usd > 0.0 => f64::INFINITY,
+        Some(_zero) => 0.0,
+        None => 0.0,
+    };
+
+    let mut per_vendor: Vec<VendorBudgetStatus> = cfg
+        .per_vendor
+        .iter()
+        .map(|(vendor_id, budget_usd)| {
+            let spent_usd = spend_by_vendor.get(vendor_id).copied().unwrap_or(0.0);
+            let percent_used = match *budget_usd {
+                b if b > 0.0 => (spent_usd / b) * 100.0,
+                _zero if spent_usd > 0.0 => f64::INFINITY,
+                _ => 0.0,
+            };
+            VendorBudgetStatus {
+                vendor_id: vendor_id.clone(),
+                spent_usd,
+                budget_usd: *budget_usd,
+                percent_used,
+            }
+        })
+        .collect();
+    // Deterministic order — HashMap iteration is unspecified, which would
+    // make snapshot tests flaky and the Swift UI shuffle on each refresh.
+    per_vendor.sort_by(|a, b| a.vendor_id.cmp(&b.vendor_id));
+
+    BudgetStatus {
+        total_spent_usd,
+        total_budget_usd,
+        total_percent_used,
+        per_vendor,
+        has_budget: cfg.has_budget(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -852,6 +1061,84 @@ name = "ClienteAcme"
             reloaded.get("openrouter").map(|s| s.as_str()),
             Some(target_id.as_str())
         );
+    }
+
+    // -----------------------------------------------------------------
+    // Story 4.6 (Wave 4) — Budget burn build_status tests
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn build_status_no_budget_yields_empty() {
+        let cfg = BudgetConfig::default();
+        let spend = HashMap::new();
+        let s = build_status(&cfg, &spend);
+        assert!(!s.has_budget);
+        assert_eq!(s.total_spent_usd, 0.0);
+        assert_eq!(s.total_budget_usd, None);
+        assert!(s.per_vendor.is_empty());
+    }
+
+    #[test]
+    fn build_status_global_only_50_percent() {
+        let cfg = BudgetConfig {
+            monthly_usd_total: Some(100.0),
+            per_vendor: HashMap::new(),
+        };
+        let mut spend = HashMap::new();
+        spend.insert("openrouter".to_string(), 30.0);
+        spend.insert("anthropic".to_string(), 20.0);
+
+        let s = build_status(&cfg, &spend);
+        assert!(s.has_budget);
+        assert_eq!(s.total_spent_usd, 50.0);
+        assert_eq!(s.total_budget_usd, Some(100.0));
+        assert_eq!(s.total_percent_used, 50.0);
+        assert!(
+            s.per_vendor.is_empty(),
+            "per_vendor empty when no per-vendor cap"
+        );
+    }
+
+    #[test]
+    fn build_status_per_vendor_overspend_marked() {
+        let mut per_vendor = HashMap::new();
+        per_vendor.insert("openrouter".to_string(), 50.0);
+        per_vendor.insert("anthropic".to_string(), 30.0);
+        let cfg = BudgetConfig {
+            monthly_usd_total: Some(100.0),
+            per_vendor,
+        };
+        let mut spend = HashMap::new();
+        spend.insert("openrouter".to_string(), 60.0); // 120% overspend
+        spend.insert("anthropic".to_string(), 15.0); // 50% used
+        spend.insert("openai".to_string(), 5.0); // not budgeted; folded only into total
+
+        let s = build_status(&cfg, &spend);
+        assert_eq!(s.total_spent_usd, 80.0);
+        assert_eq!(s.total_percent_used, 80.0);
+
+        // Per-vendor entries — sorted alphabetically (anthropic before openrouter).
+        assert_eq!(s.per_vendor.len(), 2);
+        assert_eq!(s.per_vendor[0].vendor_id, "anthropic");
+        assert_eq!(s.per_vendor[0].spent_usd, 15.0);
+        assert_eq!(s.per_vendor[0].percent_used, 50.0);
+        assert_eq!(s.per_vendor[1].vendor_id, "openrouter");
+        assert_eq!(s.per_vendor[1].spent_usd, 60.0);
+        assert!((s.per_vendor[1].percent_used - 120.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn build_status_zero_budget_with_spend_is_infinity() {
+        let cfg = BudgetConfig {
+            monthly_usd_total: Some(0.0),
+            per_vendor: HashMap::new(),
+        };
+        let mut spend = HashMap::new();
+        spend.insert("openai".to_string(), 0.01);
+
+        let s = build_status(&cfg, &spend);
+        assert!(s.total_percent_used.is_infinite());
+        assert_eq!(s.total_spent_usd, 0.01);
     }
 
     #[test]
