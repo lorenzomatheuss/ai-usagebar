@@ -54,6 +54,35 @@ final class ChartViewModel: ObservableObject {
     /// load".
     @Published private(set) var errorMessage: String?
 
+    /// Story 5.3 (Wave 5): true while `refresh()` is in flight. The Main
+    /// Window top bar binds the Refresh button's `.disabled` to this so the
+    /// user can't double-click and trigger overlapping serial fetches.
+    @Published private(set) var isRefreshing: Bool = false
+
+    /// Story 5.3 AC-5/AC-6: ephemeral status message rendered below the top
+    /// bar after `refresh()` completes. `nil` = no banner. Populated with one
+    /// of three shapes:
+    ///   - "Refresh parcial: {vendors} falhou ({reason})"  (AC-5)
+    ///   - "Nenhum vendor configurado. Abra Settings (⌘,) ..."  (AC-6)
+    ///   - nil  (success — chart + budget already updated by reload())
+    /// A trailing Task clears this back to nil after a short delay (5s for
+    /// error, 8s for the "no config" hint) — see `scheduleRefreshMessageClear`.
+    @Published private(set) var refreshStatusMessage: String?
+
+    /// Tone for `refreshStatusMessage`. Drives the banner's `foregroundStyle`
+    /// in `MainWindowView` so AC-5 (error: red-ish) and AC-6 (hint: subtle)
+    /// render with the appropriate visual weight without the View having to
+    /// regex the message string.
+    @Published private(set) var refreshStatusKind: RefreshStatusKind = .info
+
+    /// Kind discriminator for `refreshStatusMessage`. `.error` is used when
+    /// at least one vendor failed with a non-`CredentialMissing` error;
+    /// `.info` is used for the "no vendor configured" orientation hint.
+    enum RefreshStatusKind {
+        case error
+        case info
+    }
+
     /// Story 4.4 AC-3: vendor currently isolated by the user via the
     /// Per-vendor grid. `nil` = no filter (show all vendors stacked or all
     /// mini-charts un-highlighted). When non-nil, the Aggregate view
@@ -97,6 +126,24 @@ final class ChartViewModel: ObservableObject {
     // ViewModel lifetime. If init fails the error path publishes a message
     // and the next `reload(for:)` will retry init before querying.
     private var historyInitialized = false
+
+    // Story 5.3: tracks the most-recent refresh-message clear task so a new
+    // refresh that completes before the previous timer fires can cancel the
+    // pending clear and reset its own deadline. Without this, two refreshes
+    // 2s apart would have their banners disappear out-of-order.
+    private var refreshMessageClearTask: Task<Void, Never>?
+
+    // Story 5.3: canonical list of vendors that `ffi_refresh_vendor` knows
+    // how to dispatch. Kept in sync with `vendor.rs::VendorId` enum in the
+    // Rust core (anthropic, openai, openrouter, zai). Hardcoded here because
+    // the FFI doesn't expose an enumeration endpoint — adding a 5th vendor
+    // is a deliberate cross-stack change (UDL + this constant + Settings UI).
+    private static let refreshableVendors: [String] = [
+        "anthropic",
+        "openai",
+        "openrouter",
+        "zai",
+    ]
 
     init(mainViewModel: MainWindowViewModel) {
         self.mainViewModel = mainViewModel
@@ -221,6 +268,122 @@ final class ChartViewModel: ObservableObject {
                 self.errorMessage = "Failed to load history: \(error.localizedDescription)"
                 self.chartData = .empty
             }
+        }
+    }
+
+    // MARK: - Refresh (Story 5.3)
+
+    /// Manual refresh entry point bound to the Main Window's "Refresh" button
+    /// and the ⌘R keyboard shortcut. For each of the 4 known vendors, calls
+    /// `ffiRefreshVendor` (Story 5.1) — vendors without credentials fail
+    /// silently via `RefreshFfiError.CredentialMissing`. After all vendors
+    /// finish, calls `reload(for:)` so the chart and BudgetBurn gauge reflect
+    /// the freshly-fetched snapshots.
+    ///
+    /// Concurrency: vendors are dispatched **serially** in Wave 5 (per
+    /// "Out of Scope" in the story spec — parallel via `TaskGroup` is
+    /// Wave 5.5). Worst case ≈ 4 × 10s timeout = 40s, which the manual-only
+    /// trigger absorbs gracefully (button stays disabled, spinner visible).
+    ///
+    /// AC-2: flips `isRefreshing` true → false around the entire serial loop
+    /// plus the trailing `reload(for:)`. `defer` guarantees the flag clears
+    /// even on early-return paths or unexpected throws.
+    ///
+    /// AC-5/6: aggregates non-`CredentialMissing` failures into a single
+    /// banner string; if every vendor returns `CredentialMissing`, publishes
+    /// the orientation hint pointing at Settings (⌘,) instead.
+    ///
+    /// AC-9 (Cmd+R conflict): no other component captures Cmd+R in the
+    /// Wave 4 Main Window — verified by grep of `keyboardShortcut` across
+    /// `apple/Torven/**.swift`; only the new Refresh button uses it.
+    func refresh() async {
+        // Guard: if a refresh is already running, ignore the call. The
+        // button's `.disabled(isRefreshing)` makes this unreachable through
+        // the UI, but Cmd+R could in theory race the first state update.
+        guard !isRefreshing else { return }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        // Aggregate failure ledger. `missingCount` tracks vendors that
+        // returned `CredentialMissing` so AC-6 can fire when **all** vendors
+        // are unconfigured (vs AC-5 which only counts real errors).
+        var errorsByVendor: [String: String] = [:]
+        var missingCount = 0
+
+        for vendor in Self.refreshableVendors {
+            do {
+                try await ffiRefreshVendor(vendorName: vendor)
+            } catch let error as RefreshFfiError {
+                switch error {
+                case .CredentialMissing:
+                    // Expected for vendors the user hasn't configured yet
+                    // (no Keychain blob for openrouter/zai, or no OAuth
+                    // credentials file for anthropic/openai). Silently
+                    // increment the counter — never surfaced as an error.
+                    missingCount += 1
+                case .NetworkError(let message),
+                     .ApiError(let message),
+                     .ParseFailure(let message),
+                     .StorageError(let message):
+                    errorsByVendor[vendor] = message
+                }
+            } catch {
+                // Catch-all for anything the uniffi layer might surface
+                // outside `RefreshFfiError` (cancellation, future async
+                // refactor edge cases). Treat as a generic failure.
+                errorsByVendor[vendor] = error.localizedDescription
+            }
+        }
+
+        // Publish status banner BEFORE the chart reload so the user sees
+        // the outcome immediately. AC-5 vs AC-6 priority: real errors win
+        // — if 3 vendors are missing creds and 1 vendor failed with a
+        // NetworkError, show the network error (the user can fix Settings
+        // separately).
+        if !errorsByVendor.isEmpty {
+            let vendorList = errorsByVendor.keys.sorted().joined(separator: ", ")
+            refreshStatusKind = .error
+            refreshStatusMessage = "Refresh parcial: \(vendorList) falhou."
+            scheduleRefreshMessageClear(afterSeconds: 5)
+        } else if missingCount == Self.refreshableVendors.count {
+            // AC-6: ALL vendors returned CredentialMissing — orientation hint.
+            refreshStatusKind = .info
+            refreshStatusMessage = "Nenhum vendor configurado. Abra Settings (⌘,) para adicionar suas API keys."
+            scheduleRefreshMessageClear(afterSeconds: 8)
+        } else {
+            // At least one vendor succeeded and none failed loudly. Clear
+            // any stale banner from a prior refresh so the success state is
+            // visually unambiguous.
+            refreshMessageClearTask?.cancel()
+            refreshStatusMessage = nil
+        }
+
+        // Reload the chart + budget gauge with the freshly-written snapshots.
+        // We use `mainViewModel.dateRange` rather than a stored copy so the
+        // refresh respects whatever range the user picked between clicks.
+        if let range = mainViewModel?.dateRange {
+            reload(for: range)
+        }
+    }
+
+    /// Schedules a delayed clear of `refreshStatusMessage`. Cancels any
+    /// pending clear so refreshes that pile up reset the deadline rather
+    /// than each setting their own (which would cause out-of-order dismissal).
+    private func scheduleRefreshMessageClear(afterSeconds seconds: Int) {
+        refreshMessageClearTask?.cancel()
+        refreshMessageClearTask = Task { @MainActor [weak self] in
+            // `Task.sleep` is cancellation-aware; if the task is cancelled
+            // before the deadline (e.g. a new refresh triggers a new clear)
+            // the `try` throws `CancellationError` and we fall through
+            // without nilling the message.
+            do {
+                try await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            self.refreshStatusMessage = nil
         }
     }
 }

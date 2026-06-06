@@ -92,6 +92,31 @@ private struct ChartContent: View {
 
             Divider()
 
+            // Story 5.3 (AC-5/AC-6): refresh status banner. Rendered above
+            // the chart so a partial-failure or "no vendor configured" hint
+            // doesn't obscure the chart contents. Distinct from the
+            // `errorMessage` band below the chart — that one surfaces
+            // `ffi_query_aggregated` failures (Wave 4), this one surfaces
+            // `ffi_refresh_vendor` failures (Wave 5).
+            if let statusMessage = chartViewModel.refreshStatusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(
+                        chartViewModel.refreshStatusKind == .error
+                            ? Color.red
+                            : Color.secondary
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        chartViewModel.refreshStatusKind == .error
+                            ? Color.red.opacity(0.08)
+                            : Color.secondary.opacity(0.05)
+                    )
+                    .accessibilityLabel(statusMessage)
+            }
+
             chartBody
 
             if let errorMessage = chartViewModel.errorMessage {
@@ -164,6 +189,41 @@ private struct ChartContent: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(width: 160)
+
+            // Story 5.3 (AC-1, AC-2, AC-7): manual refresh trigger. Icon-only
+            // to preserve top-bar density (existing controls already consume
+            // ~656pt at 900pt window; adding "Refresh" text would push the
+            // bar past the safe limit when the date picker is in Custom mode
+            // with two DatePickers). The `accessibilityLabel` carries the
+            // human-readable description for VoiceOver users.
+            //
+            // ⌘R is the canonical "refresh" shortcut on macOS (Safari, Mail,
+            // Finder) — verified by grep that no other component in the
+            // Main Window claims it (AC-9: no conflict).
+            //
+            // `.borderless` keeps the button visually quiet next to the
+            // segmented pickers; `.disabled(isRefreshing)` blocks double-
+            // clicks while a refresh is in flight.
+            Button {
+                Task { await chartViewModel.refresh() }
+            } label: {
+                if chartViewModel.isRefreshing {
+                    // While refreshing: small inline ProgressView in place
+                    // of the arrow icon. `.controlSize(.small)` matches the
+                    // visual weight of the surrounding controls.
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 16, height: 16)
+                }
+            }
+            .buttonStyle(.borderless)
+            .disabled(chartViewModel.isRefreshing)
+            .keyboardShortcut("r", modifiers: .command)
+            .accessibilityLabel("Atualizar dados de uso")
+            .accessibilityHint("Busca dados reais das APIs configuradas")
         }
     }
 
