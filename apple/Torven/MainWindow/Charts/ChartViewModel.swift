@@ -54,6 +54,23 @@ final class ChartViewModel: ObservableObject {
     /// load".
     @Published private(set) var errorMessage: String?
 
+    /// Story 4.4 AC-3: vendor currently isolated by the user via the
+    /// Per-vendor grid. `nil` = no filter (show all vendors stacked or all
+    /// mini-charts un-highlighted). When non-nil, the Aggregate view
+    /// (`StackedAreaChart`) restricts itself to this vendor and the
+    /// Per-vendor grid draws a colored border around the matching card.
+    @Published private(set) var selectedVendor: String?
+
+    /// Story 4.4 AC-3: `chartData.samples` grouped by `.vendor`. Computed
+    /// on demand so we don't have to invalidate a stored cache every time
+    /// `chartData` is republished. `Dictionary(grouping:by:)` is O(n) and
+    /// `n` is bounded by the FFI worst case (5 vendors × 168 hourly buckets
+    /// = 840 samples for 7d), so this is cheap enough to recompute on each
+    /// view evaluation that needs it.
+    var samplesByVendor: [String: [AggregatedSample]] {
+        Dictionary(grouping: chartData.samples, by: \.vendor)
+    }
+
     private var cancellables = Set<AnyCancellable>()
     private weak var mainViewModel: MainWindowViewModel?
 
@@ -72,6 +89,30 @@ final class ChartViewModel: ObservableObject {
     init(mainViewModel: MainWindowViewModel) {
         self.mainViewModel = mainViewModel
         bindToDateRange(mainViewModel)
+    }
+
+    // MARK: - Vendor selection (Story 4.4)
+
+    /// Toggle filter on the supplied vendor. Tapping the currently-selected
+    /// vendor clears the filter (passes `nil` semantics). Tapping a
+    /// different vendor swaps the selection. Tapping with `nil` clears
+    /// unconditionally (used by tests / future explicit "clear filter"
+    /// affordances).
+    ///
+    /// Why centralise the toggle here (instead of in the view)? The view
+    /// then doesn't have to know that re-tapping should deselect, which
+    /// keeps `PerVendorGrid` a pure presentation layer and `ChartViewModel`
+    /// the single owner of selection state.
+    func selectVendor(_ vendorId: String?) {
+        guard let vendorId else {
+            selectedVendor = nil
+            return
+        }
+        if selectedVendor == vendorId {
+            selectedVendor = nil
+        } else {
+            selectedVendor = vendorId
+        }
     }
 
     // MARK: - Wiring
