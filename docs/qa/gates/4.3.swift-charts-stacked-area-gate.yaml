@@ -1,0 +1,636 @@
+schema: 1
+storyId: 4.3.swift-charts-stacked-area
+story: '4.3'
+gate: PASS
+verdict: PASS
+score: 9.5
+gateDate: '2026-06-06'
+commit_reviewed: '9ef0138 on feat/wave-4-story-4-3-stacked-area (cut from main 3da957f)'
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn) via @aiox-master orchestration'
+updated: '2026-06-06T03:00:00Z'
+checked_at: '2026-06-06T03:00:00Z'
+status_reason: >-
+  Wave 4 chart foundation lands cleanly. The dev delivered the Swift Charts
+  primary chart (stacked-area cost-by-vendor) + the reusable infrastructure
+  (`AggregatedSample`, `ChartData`, `ChartViewModel`) that Stories 4.4-4.6
+  will lean on, with thoughtful architectural rationale documented inline
+  for every non-obvious choice. 9 of 10 ACs verified at code level + 2 of
+  the 3 build gates green; AC-9 (XCTest for `fromFFI`) is the one explicit
+  deferral and is well-justified — no XCTest target exists in
+  apple/project.yml (testTargets: [] confirmed) per Wave 1 ADR §4, the
+  Rust side already covers the aggregation logic via Story 4.0.5
+  AC-7/8/9/10, the Swift `fromFFI` is a trivial bucket→sample map exercised
+  by the 840-sample #Preview block, and standing up XCTest is itself a
+  separate piece of work (better as a Wave 7 story). The implementation
+  shows careful design beyond the AC checklist: (1) cancellation-aware
+  `Task` in `reload(for:)` prevents stale FFI returns from clobbering
+  newer range fetches during fast 7d→30d→Custom switching; (2) lazy
+  idempotent `ffiInitHistory` survives a future architectural
+  restructure where init might be lost mid-process; (3) deterministic
+  alphabetical vendor sort in `ChartData.vendors` keeps the legend
+  stable across reloads regardless of which vendor first appears in a
+  given range; (4) `KeyValuePairs<String, Color>` (vs dictionary) for
+  `vendorColorMapping` so Swift Charts gets deterministic legend
+  ordering; (5) macOS 13 fallback for `ContentUnavailableView` (macOS
+  14+) inline via `if #available`; (6) Reduce Motion guard on the chart
+  cross-fade via `.animation(reduceMotion ? nil : ...)` (AC-7); (7)
+  snap-to-sample hover annotation so the dashed RuleMark always aligns
+  with a real bucket boundary instead of floating at interpolated
+  x-positions; (8) a private `ChartContent` sub-view solves the
+  `@StateObject A depends on @StateObject B at init time` deadlock
+  cleanly without singletons or environment objects. CodeRabbit
+  `--prompt-only -t committed --base main` returned **No findings** —
+  the cleanest CR result of the Wave so far. Build gate matrix:
+  `make build-core` ✓, `xcodegen generate` ✓, `xcodebuild Debug
+  BUILD SUCCEEDED` ✓ (independently re-verified at gate time on
+  branch HEAD), `cargo test --workspace` 242/242 passing (up from
+  173 since previous Rust tests landed in 4.0.5; no regressions).
+  Vendor string casing audit: `crates/torven-core/src/config.rs`
+  uses lowercase identifiers (`openrouter`, `anthropic`, …) — matches
+  the `vendorColorMapping` keys in `StackedAreaChart.swift`
+  (lines 54-60) verbatim, so the color scale lookup will resolve at
+  runtime. Score 9.5 vs 10 reflects (1) AC-9 deferral as DBT-002,
+  (2) AC-8 performance verification is preview-eyeballed not
+  instrumented (no fps counter), (3) one quiet ergonomics polish
+  opportunity (HOV-001) for the hover annotation positioning when
+  charts approach the top edge.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: pass
+  security: pass
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      **AggregatedSample.swift** (117 LOC) is concise and intention-revealing:
+      `struct AggregatedSample: Identifiable, Equatable` with `id` (UUID),
+      `timestamp` (Date), `vendor` (String), `costUsd` (Double),
+      `requestCount` (Int) — matches AC-1 verbatim. The `fromFFI(_:)` map
+      (lines 93-115) handles two subtle correctness traps: (a) `Double(ts) /
+      1000.0` not `Int(ts / 1000)` preserves sub-second precision so
+      hourly-bucket timestamps don't snap to second boundaries; (b)
+      alphabetical vendor sort with a `Set<String>` for de-dup (lines
+      107-112) is O(n) and gives stable legend ordering across reloads.
+      Header comment explicitly documents why `BucketStrategy` is NOT
+      redeclared (UDL is single source of truth). **ChartViewModel.swift**
+      (163 LOC) is the most carefully thought-out file in this story:
+      `@MainActor final class ChartViewModel: ObservableObject` with
+      `@Published private(set) var chartData` + `errorMessage` (lines
+      48, 55) — `private(set)` enforces unidirectional data flow from VM
+      to View. The Combine binding (lines 83-93) uses `.removeDuplicates()`
+      which works because `DateRange` is `Equatable` (gained in Story 4.2).
+      The Task cancellation pattern (line 105, 143) is exactly the
+      pattern Apple recommends for "structured concurrency with a single
+      latest result" — `inFlightTask?.cancel()` + `Task.isCancelled`
+      guard before publish — and the in-flight task is tracked in a
+      `Task<Void, Never>?` ivar so subsequent calls can cancel it. Lazy
+      `historyInitialized` flag (line 70) + retry-on-error (`if !self.
+      historyInitialized { try ffiInitHistory(dbPath: nil); … }` lines
+      112-121) + reset-on-HistoryFfiError (line 151) is a clean recovery
+      shape. Error mapping (`HistoryFfiError` → `errorMessage` →
+      published) means the view never gets a crash; it gets a typed
+      `Optional<String>` it can render or hide. `weak self` in the sink
+      closure (line 89) prevents the typical Combine retain cycle.
+      **StackedAreaChart.swift** (331 LOC) is the largest file but
+      cleanly factored: the chart body proper (lines 90-153) is ~60
+      lines of declarative SwiftUI; the rest is the empty-state fallback,
+      hover overlay machinery, hover-card view, and the 840-sample preview
+      mock. `Chart { ForEach(chartData.samples) { AreaMark(...).foreground
+      Style(by:).interpolationMethod(.catmullRom) } }` matches AC-3 exactly
+      with the additional `RuleMark(x:)` (lines 105-109) for the hover
+      guide line. The 5-vendor `KeyValuePairs<String, Color>` (lines
+      54-60) uses brand-aligned colors and lowercase keys that match the
+      Rust vendor casing (verified via `config.rs:457`). `chartOverlay`
+      + `GeometryReader` + `Rectangle().contentShape(Rectangle())` +
+      `.onContinuousHover` (lines 121-137) is the documented pattern for
+      hover detection on Swift Charts in macOS 13. `updateHoveredTimestamp`
+      (lines 190-224) correctly bridges `if #available(macOS 14.0, *)`
+      to fall back to `geometry.size.width` when `proxy.plotAreaFrame`
+      isn't available. The `samplesAtHoveredTimestamp` filter (line 227)
+      relies on Date equality which works because hover snaps to a real
+      sample timestamp first. Empty-state fallback (lines 158-181) is a
+      pixel-faithful manual reconstruction of `ContentUnavailableView`
+      for macOS 13. **MainWindowView.swift** (93 LOC, +47/-11 from 4.2)
+      preserves the Story 4.2 contract verbatim (`@StateObject viewModel
+      = MainWindowViewModel()`, DateRangePicker in topBar) and adds the
+      private `ChartContent` sub-view (lines 53-87) — the
+      `@ObservedObject var mainViewModel` + `@StateObject var
+      chartViewModel = ChartViewModel(mainViewModel:)` pattern is the
+      canonical macOS 13 idiom for init-time view-model dependencies
+      and is clearly documented inline. Inline error banner (lines 71-83)
+      surfaces FFI errors below the chart with `.background(Color.red.
+      opacity(0.08))` — gives the user a breadcrumb that the empty state
+      is caused by failure, not absence of data. No retain cycles, no
+      force-unwraps in this set of files, no @MainActor escapes.
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      Rust regression check: `cargo test --workspace` returns **242
+      passing / 0 failed / 9 ignored** (live API). 4.3 doesn't touch Rust,
+      so this confirms no spillover from the FFI call surface (the bindings
+      were already shipped in 4.0.5). Swift side has no XCTest target in
+      apple/project.yml (testTargets: []), which is the standing Wave 4
+      coverage envelope per Wave 1 ADR §4 — heavy logic stays in Rust where
+      cargo test covers it, Swift relies on compile-time + #Preview +
+      runtime smoke. AC-9 deferral (DBT-002) is the explicit acknowledgment
+      that the `fromFFI` Swift function isn't covered by an XCTest case;
+      the function is a trivial map (line for line: bucket → sample) and
+      Story 4.0.5's Rust tests cover the aggregation it consumes. The 840-
+      sample #Preview block (StackedAreaChart.swift lines 299-330) exercises
+      `fromFFI`-equivalent shape via mock data — visual verification.
+      Acceptable per project precedent (Stories 2.1-2.3, 3.1-3.3, 4.1, 4.2).
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: '9/10 ACs verified at code level; AC-9 deferred per Wave 7 XCTest backlog (see acs_breakdown).'
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      Story 4.2 contract preserved: `MainWindowView.swift` keeps
+      `@StateObject viewModel = MainWindowViewModel()` and the
+      DateRangePicker(dateRange: $viewModel.dateRange) in topBar. The
+      private `ChartContent` sub-view receives `mainViewModel: viewModel`
+      as `@ObservedObject` — proper SwiftUI ownership semantics, no
+      double-storage. No changes to `DateRangePicker.swift`,
+      `MainWindowViewModel.swift`, `MainWindowController.swift`, or any
+      Wave 3 popover files. No changes to `crates/torven-core/*`. Build
+      gate: `cargo test --workspace` 242/242 (was 173/173 in Story 4.2;
+      69 additional tests come from 4.0.5's ffi_query_aggregated coverage
+      which landed in main before 4.3 branched). `xcodebuild Debug
+      BUILD SUCCEEDED` independently re-verified at gate time on
+      branch HEAD 9ef0138. SourceKit diagnostic noise (Cannot find type
+      X in scope) flagged at one point during file editing was IDE index
+      staleness pre-xcodegen regeneration — does NOT reproduce against
+      `xcodebuild` proper. Pre-existing linker warnings about macOS 26.5
+      SDK vs 13.0 deployment target are inherited from main (not a 4.3
+      regression).
+
+  - name: performance
+    verdict: PASS (with HOV-002 observation)
+    notes: >-
+      AC-8 NFR: render < 100ms for 30d × 5 vendors (150 marks). The 840-
+      sample preview (7d × 5 vendors × 24 hourly buckets = the story's
+      stated worst-case) renders cleanly at preview time on Apple Silicon
+      per dev D-6 inspection. `.chartPlotStyle { $0.compositingGroup() }`
+      not applied — documented as a one-liner addition if Wave 5 polish
+      reveals jank on minimum-supported hardware. Combine
+      `.removeDuplicates()` on `$dateRange` (ChartViewModel line 88)
+      prevents redundant FFI calls when the same range is re-published.
+      Cancellation-aware Task pattern (line 105, 143) means rapid range
+      switching (7d → 30d → Custom in quick succession) only renders the
+      latest result — no flicker from stale data landing late. ChartData
+      is a value-type with `Equatable` synthesized, so SwiftUI's diff
+      across `@Published` updates is O(samples) — for 840 samples this
+      is sub-millisecond. **HOV-002 observation:** the hover annotation
+      card (lines 142-149) is placed via `.overlay(alignment:
+      .topTrailing)` which is geometrically simple but means the card
+      doesn't follow the cursor — it floats in a fixed corner. Acceptable
+      for Wave 4 but a Wave 5 polish opportunity if user feedback wants
+      cursor-anchored tooltips.
+
+  - name: security
+    verdict: PASS
+    notes: >-
+      No new attack surface introduced. FFI calls (`ffiInitHistory`,
+      `ffiQueryAggregated`) are pre-existing surface from Story 4.0.5;
+      4.3 only adds Swift consumer-side code. Error handling never
+      propagates a panic to the UI — `HistoryFfiError` is caught and
+      mapped to a published `errorMessage` string. No new credentials,
+      no network calls, no file I/O at the Swift layer. Vendor color
+      mapping uses hardcoded `Color(red:green:blue:)` constants — no
+      user-input rendering paths in the chart. `chartOverlay` +
+      `onContinuousHover` event handling is sandboxed within the chart
+      view's frame.
+
+  - name: documentation
+    verdict: PASS (exemplary)
+    notes: >-
+      This is the most thoroughly documented Wave 4 story so far.
+      AggregatedSample.swift header (lines 1-25) explains the WHY of a
+      Swift-side wrapper instead of binding to TimeBucket directly (3
+      reasons listed). ChartViewModel.swift header (lines 1-37) walks
+      through the architectural choice (split from MainWindowViewModel),
+      the Combine-over-onChange decision (with the macOS 13/14 risk
+      cross-reference), and the lazy-init contract for ffiInitHistory.
+      StackedAreaChart.swift header (lines 1-42) documents the chart
+      type choice (AreaMark vs BarMark/LineMark with ADR-6 reference),
+      the Catmull-Rom interpolation rationale, the vendor color palette,
+      and the macOS 13 compat caveats. Inline comments are dense but
+      pertinent — e.g. line 88-90 explains why `removeDuplicates`, line
+      105-106 explains task cancellation, line 218-222 explains
+      snap-to-sample hover behavior. Dev Agent Record in the story
+      file documents 7 design decisions (D-1 through D-7) and 3
+      Outstanding items with explicit rationale. Change Log captures
+      the full SM-PO-Dev lifecycle. AC compliance table maps each AC
+      to file:line evidence.
+
+acs_verified: '9/10 (AC-9 deferred per Wave 7 XCTest backlog, acknowledged by @dev — DBT-002)'
+acs_breakdown:
+  AC-1: >-
+    PASS — apple/Torven/MainWindow/Charts/AggregatedSample.swift lines
+    39-57 declare `struct AggregatedSample: Identifiable, Equatable`
+    with all 5 fields from the AC (id UUID, timestamp Date, vendor
+    String, costUsd Double, requestCount Int). Struct `ChartData` lines
+    67-77 has `samples: [AggregatedSample]`, `vendors: [String]`,
+    `var isEmpty: Bool { samples.isEmpty }`, plus static `.empty`
+    factory. `AggregatedSample.fromFFI(_ buckets: [TimeBucket])
+    -> ChartData` lines 93-115 maps `bucket.bucketStartTs` Int64-ms →
+    Date via `Double(bucket.bucketStartTs) / 1000.0` (correct sub-second
+    handling), `bucket.vendor` → vendor, `bucket.costSumUsd` → costUsd,
+    `Int(bucket.requestCount)` → requestCount. ASC order preserved
+    (lines 94-101 iterate via `.map`), vendor list de-duplicated +
+    alphabetically sorted (lines 107-112).
+
+  AC-2: >-
+    PASS — apple/Torven/MainWindow/Charts/ChartViewModel.swift declares
+    `@MainActor final class ChartViewModel: ObservableObject` (lines
+    43-44). `@Published private(set) var chartData: ChartData = .empty`
+    line 48 + `errorMessage: String?` line 55. `bindToDateRange(_:)`
+    lines 83-93 subscribes to `vm.$dateRange.removeDuplicates().sink {
+    [weak self] range in self?.reload(for: range) }`. Method
+    `reload(for range: DateRange)` lines 101-162 executes inside
+    `Task { @MainActor [weak self] in … }` (line 107) with lazy
+    `ffiInitHistory(dbPath: nil)` (line 114), then
+    `ffiQueryAggregated(vendor: "", accountFilterMode: .all, accountId:
+    nil, sinceTs: range.sinceTs, untilTs: range.untilTs, bucketStrategy:
+    .auto)` (lines 131-138). Result mapped via `AggregatedSample.fromFFI(
+    buckets)` line 145. `HistoryFfiError` caught (line 147) → published
+    as `errorMessage` (line 152) → `chartData = .empty` (line 153) — no
+    crash. **BucketStrategy NOT redeclared** in Swift; the UDL enum from
+    `apple/Torven/Bridge/Generated/torven_core.swift` is consumed via
+    `.auto` (line 137). Cancellation guard line 143 prevents stale
+    publishes.
+
+  AC-3: >-
+    PASS — apple/Torven/MainWindow/Charts/StackedAreaChart.swift lines
+    91-100 declare `Chart { ForEach(chartData.samples) { AreaMark(x:
+    .value("Time", sample.timestamp), y: .value("Cost (USD)",
+    sample.costUsd)).foregroundStyle(by: .value("Vendor", sample.vendor))
+    .interpolationMethod(.catmullRom) } }`. `.chartForegroundStyleScale(
+    vendorColorMapping)` line 111 binds the 5-color KeyValuePairs (lines
+    54-60: openrouter purple, anthropic orange, openai dark-green, zai
+    blue, gemini grey-reserved). `.chartXAxis { AxisMarks(preset:
+    .aligned) }` line 112-114. `.chartYAxis { AxisMarks(format:
+    .currency(code: "USD")) }` line 115-117. `.chartLegend(position:
+    .bottom, alignment: .center)` line 118.
+
+  AC-4: >-
+    PASS — StackedAreaChart.swift lines 78-86 routes empty state via
+    `if chartData.isEmpty { emptyState } else { chartView }`.
+    `emptyState` lines 158-181 uses `if #available(macOS 14.0, *) {
+    ContentUnavailableView("No Data", systemImage: "chart.xyaxis.line",
+    description: Text("No usage history in the selected range")) }
+    else { VStack with Image + 2 Text }` — exactly the AC's recipe.
+    Macos 13 fallback visually matches ContentUnavailableView's weight
+    (48pt icon, headline title, secondary subtitle).
+
+  AC-5: >-
+    PASS — apple/Torven/MainWindow/MainWindowView.swift line 16
+    preserves `@StateObject viewModel = MainWindowViewModel()` from
+    Story 4.2. Line 33 invokes `ChartContent(mainViewModel: viewModel)`
+    inside the body's VStack. Private struct `ChartContent` lines 53-87
+    declares `@ObservedObject var mainViewModel` + `@StateObject var
+    chartViewModel: ChartViewModel` with `init(mainViewModel:)` that
+    calls `_chartViewModel = StateObject(wrappedValue:
+    ChartViewModel(mainViewModel:))` (lines 57-66). Body line 70
+    renders `StackedAreaChart(chartData: chartViewModel.chartData)`
+    with `.frame(maxWidth: .infinity, maxHeight: .infinity)`.
+    Placeholder Text("History — Wave 4") **removed** as required.
+
+  AC-6: >-
+    PASS — StackedAreaChart.swift lines 121-137 implement
+    `.chartOverlay { proxy in GeometryReader { geometry in Rectangle().
+    fill(Color.clear).contentShape(Rectangle()).onContinuousHover {
+    phase in … } } }` — matches the AC template. `updateHoveredTimestamp`
+    helper (lines 190-224) bridges macOS 13/14 via `if #available(macOS
+    14.0, *) { let frame = geometry[proxy.plotAreaFrame] … } else {
+    originX = 0; plotWidth = geometry.size.width }` — graceful fallback.
+    `samplesAtHoveredTimestamp(_:)` returns samples at the snapped
+    timestamp; `hoverCard(at:)` (lines 233-263) renders `VStack {
+    Text(timestamp.formatted(date: .abbreviated, time: .shortened));
+    ForEach(samples) { HStack { Circle().fill(color(for: vendor));
+    Text(vendor); Spacer(); Text(cost.formatted(.currency(code: "USD"))) } } }`
+    with RoundedRectangle background and shadow — implements the AC's
+    "VStack { Text(date); Text(vendor); Text(cost) }" pattern with
+    per-vendor color dot. RuleMark dashed guide line (lines 105-109)
+    adds visual feedback the AC didn't explicitly request — a positive
+    deviation.
+
+  AC-7: >-
+    PASS — StackedAreaChart.swift line 70 declares `@Environment(\.
+    accessibilityReduceMotion) private var reduceMotion`. Line 152-153
+    applies `.animation(reduceMotion ? nil : .easeInOut(duration: 0.2),
+    value: chartData)` — exact pattern from AC. When Reduce Motion is
+    ON, the cross-fade between range changes is suppressed (instant
+    transition); when OFF, the 200ms ease-in-out applies.
+
+  AC-8: >-
+    PASS — T6 inspection per dev (#Preview "7 days × 5 vendors" with
+    840 mock samples) renders cleanly on Apple Silicon. The 30d × 5
+    vendors target (150 marks) is well within budget. Combine
+    `.removeDuplicates()` + Task cancellation prevent redundant work.
+    `.chartPlotStyle { $0.compositingGroup() }` NOT applied — design
+    decision D-6 documents the trade-off. **Visual eyeball, not
+    instrumented benchmark.** No fps counter logged. Wave 5 polish
+    can add instrumented perf if needed.
+
+  AC-9: >-
+    DEFERRED (DBT-002) — XCTest target for `fromFFI` requires standing
+    up an XCTest scheme + target + Tests folder in apple/project.yml,
+    which currently has `testTargets: []` per Wave 1 ADR §4 (deferred
+    to Wave 7). The `fromFFI` function is a straightforward bucket→
+    sample map (~22 LOC) — Story 4.0.5's Rust tests cover the
+    aggregation logic that produces the input buckets. The 840-sample
+    #Preview exercises `fromFFI`-equivalent shape via mock data for
+    visual verification. Consistent calibration with Stories 2.1-2.3
+    (9.83 aggregate PASS) and 3.1-3.3.
+
+  AC-10: >-
+    PASS — StackedAreaChart.swift lines 279-289 declare TWO #Preview
+    blocks: (1) "7 days × 5 vendors (mock)" with `.previewMock7Days`
+    (840 samples) at 900×500 frame; (2) "Empty state" with
+    `ChartData.empty` at 900×500. The mock data generator (lines
+    299-330) iterates 7 days × 24 hours × 5 vendors with a
+    deterministic-but-varied sinusoidal cost modulation — a thoughtful
+    detail that produces a chart that actually looks like real data
+    instead of flat noise.
+
+decisions_review:
+  - decision: 'Private ChartContent sub-view for init-time ViewModel dependency'
+    verdict: JUSTIFIED (canonical pattern)
+    rationale: >-
+      The top-level MainWindowView can't write `@StateObject(wrappedValue:
+      ChartViewModel(mainViewModel: viewModel))` because its own
+      `@StateObject viewModel` hasn't been published into `self` at init
+      time — Swift's two-phase property initialization order forbids it.
+      The dev's solution (private sub-view that takes the parent VM as
+      `@ObservedObject` and constructs the child VM in its own init via
+      `StateObject(wrappedValue:)`) is the documented macOS 13 idiom for
+      this exact problem. Alternatives considered (singleton, environment
+      object, weak reference passthrough) would all have introduced more
+      indirection. The ChartContent sub-view also gives Stories 4.4+ a
+      natural composition point — additional sibling charts (per-vendor
+      grid, budget gauge) plug into this container rather than mutating
+      MainWindowView.
+
+  - decision: 'Combine `.sink` over `View.onChange` for $dateRange observation'
+    verdict: JUSTIFIED (eliminates macOS 13/14 API risk)
+    rationale: >-
+      Story 4.3 Risk #3 flagged that View.onChange has different
+      signatures pre/post macOS 14. The dev's choice of Combine `.sink`
+      sidesteps the entire API gap — `Publisher<DateRange,Never>.sink`
+      is unchanged on macOS 13.0 through current and delivers the
+      current value to new subscribers (no separate "first load" kick
+      needed). The `[weak self]` capture prevents the Combine retain
+      cycle that's the typical foot-gun in this pattern. The
+      `.removeDuplicates()` guard is cheap insurance against future
+      refactors that might re-publish identical ranges.
+
+  - decision: 'Lazy idempotent `ffiInitHistory` (not app-startup)'
+    verdict: JUSTIFIED (correct deferral)
+    rationale: >-
+      Wave 4 doesn't yet have an AppDelegate hook for app-startup
+      initialization (planned for Story 1.15 / ADR-10). The Rust impl
+      of `ffi_init_history` writes `*slot = Some(db)` unconditionally
+      so re-calling is safe (the dev verified this in
+      `crates/torven-core/src/uniffi_exports.rs`). The `historyInitialized`
+      flag prevents redundant work after the first successful call;
+      the flag is reset on `HistoryFfiError` so a future recovery
+      retry will re-init. This is the cleanest deferral pattern for
+      "we know where this should live eventually but the right home
+      doesn't exist yet."
+
+  - decision: 'Task cancellation in `reload(for:)` for stale-result prevention'
+    verdict: JUSTIFIED (correctness, not optimization)
+    rationale: >-
+      Without `inFlightTask?.cancel()` + `guard !Task.isCancelled`
+      before `chartData = …`, a fast 7d → 30d → Custom range switch
+      could result in the 7d query returning *after* the Custom query
+      publishes its result, overwriting the user's actual selection
+      with stale data. This isn't theoretical — the FFI call is
+      synchronous from Swift's POV but the surrounding Task allows
+      cooperative cancellation between the lazy init and the query.
+      The pattern is exactly Apple's recommended "single latest result"
+      idiom for async sources.
+
+  - decision: 'KeyValuePairs (not Dictionary) for vendorColorMapping'
+    verdict: JUSTIFIED (Swift Charts API contract)
+    rationale: >-
+      `chartForegroundStyleScale(_:)` consumes the pairs in declaration
+      order for both the foreground style scale and the legend. A
+      `[String: Color]` dictionary's iteration order is non-deterministic,
+      so the legend would scramble across reloads. KeyValuePairs is
+      ordered by declaration — the dev's choice matches the Swift
+      Charts API expectation exactly.
+
+  - decision: 'Hover snap-to-sample (RuleMark + annotation align to bucket)'
+    verdict: JUSTIFIED (UX polish without cost)
+    rationale: >-
+      `chartProxy.value(atX:)` returns the *interpolated* date at the
+      cursor's exact x-position, which would float the dashed guide
+      line between bucket boundaries — visually noisy and incorrect
+      for discrete-bucket data. Snapping to `min(by: timeIntervalSince(
+      raw))` aligns the guide line and the annotation card with a real
+      data point. O(samples) for 840 samples is a trivial cost.
+
+  - decision: '`.chartPlotStyle { $0.compositingGroup() }` NOT applied'
+    verdict: JUSTIFIED (avoid pre-optimization)
+    rationale: >-
+      The dev's T6 visual inspection showed 840 AreaMarks rendering
+      cleanly on Apple Silicon. Applying `compositingGroup()`
+      preemptively would (a) cost a render pass per redraw and
+      (b) obscure whether the optimization is actually needed if
+      jank ever appears. Documented as a one-line addition in
+      design decision D-6 if Wave 5 polish reveals problems on
+      minimum-supported hardware.
+
+  - decision: '5-vendor brand-aligned color palette (KeyValuePairs ordered)'
+    verdict: JUSTIFIED
+    rationale: >-
+      The chosen colors map to each vendor's marketing brand:
+      OpenRouter purple, Anthropic orange, OpenAI dark green, Z.AI
+      blue, Gemini grey (reserved — Wave 4 doesn't include Gemini
+      data). RGB triples (not asset catalog) is consistent with the
+      Wave 3 VendorCard color pattern. The legend will read in
+      declaration order (openrouter, anthropic, openai, zai, gemini)
+      which is alphabetical-ish and matches the `ChartData.vendors`
+      sort order — so legend and chart agree on iteration order.
+
+smoke_ux_recommendation:
+  policy: 'Code-level PASS; runtime smoke = Lorenzo bench (NOT gate-blocking)'
+  rationale: >-
+    Wave 2/3/4 precedent (Story 3.2 AC-5 / Story 3.3 AC-9 / Story 4.1
+    SMK-001 / Story 4.2 SMK-002) batches the runtime smoke verification
+    with the closing story of each wave. For 4.3 the four smoke
+    checkpoints to verify when Lorenzo opens the .app are:
+      1. Open Main Window via ⌘1 — chart renders with placeholder
+         removed (no more "History — Wave 4" text)
+      2. With empty `history.db` (no snapshots): empty-state view
+         shows ("No Data" icon + title + subtitle)
+      3. With seeded data: stacked-area chart visible with 5 vendor
+         colors, legend at bottom, currency-formatted Y-axis
+      4. Switch DateRangePicker 7d → 30d → Custom — chart re-renders
+         with the new range each time; no flicker from stale results
+      5. Hover over the chart — dashed vertical RuleMark + annotation
+         card appears with date + per-vendor cost breakdown
+    Code-level inspection confirms the logic for all 5 is correct.
+    Runtime verification will batch with the closing Wave 4 story
+    (4.6 Budget Burn) per project precedent.
+
+wave3_wave4_x_regression:
+  popover_frame: 'preserved (no changes to PopoverView.swift)'
+  vendor_cards_render: 'preserved (Wave 3 contract intact)'
+  main_window_shell: 'preserved (Story 4.1 MainWindowController + ⌘1 hotkey untouched)'
+  date_range_picker: 'preserved (Story 4.2 DateRangePicker.swift + MainWindowViewModel.swift untouched)'
+  popover_show_history_button: 'preserved (Story 4.1 footer intact)'
+  ffi_query_aggregated: 'preserved (Story 4.0.5 surface consumed read-only)'
+  files_not_modified_by_design:
+    - apple/Torven/MainWindow/DateRangePicker.swift (Story 4.2)
+    - apple/Torven/MainWindow/MainWindowViewModel.swift (Story 4.2)
+    - apple/Torven/MainWindow/MainWindowController.swift (Story 4.1)
+    - apple/Torven/Popover/* (Wave 3 + Story 4.1 footer)
+    - apple/Torven/TorvenApp.swift (Story 4.1 hotkey wiring)
+    - apple/Torven/Bridge/Generated/torven_core.swift (autogen — UDL surface)
+    - crates/torven-core/* (zero Rust changes)
+
+build_gate:
+  cargo_test_workspace: 'green (242/242 passing, 0 failed, 9 ignored — live API; up from 173/173 in 4.2, growth from 4.0.5 Rust tests landing in main before 4.3 branched. Zero regression.)'
+  cargo_clippy: 'n/a for this story (no Rust changes)'
+  cargo_fmt: 'n/a for this story (no Rust changes)'
+  xcodegen_generate: 'green (.xcodeproj regenerated cleanly with Charts/ subdirectory auto-globbed by sources: [path: Torven])'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED independently re-verified at gate time on branch HEAD 9ef0138)'
+  coderabbit: 'qa pre-review --prompt-only -t committed --base main → **No findings** (cleanest result of the Wave so far)'
+
+files_reviewed:
+  created:
+    - apple/Torven/MainWindow/Charts/AggregatedSample.swift (117 LOC — AggregatedSample + ChartData + fromFFI)
+    - apple/Torven/MainWindow/Charts/ChartViewModel.swift (163 LOC — @MainActor ObservableObject, Combine binding, lazy init, cancellation-aware Task)
+    - apple/Torven/MainWindow/Charts/StackedAreaChart.swift (331 LOC — Chart AreaMark stacked + 5-vendor palette + hover annotation + empty state + 2x #Preview)
+  modified:
+    - apple/Torven/MainWindow/MainWindowView.swift (+47/-11 — private ChartContent sub-view with @StateObject ChartViewModel, placeholder removed, inline error banner)
+    - docs/stories/epics/epic-torven-v1/4.3.swift-charts-stacked-area.story.md (Status InReview, Change Log entries, Dev Agent Record with D-1 through D-7)
+  regenerated:
+    - apple/Torven.xcodeproj/project.pbxproj (via xcodegen generate — gitignored)
+  not_modified_by_design:
+    - apple/Torven/MainWindow/DateRangePicker.swift (Story 4.2)
+    - apple/Torven/MainWindow/MainWindowViewModel.swift (Story 4.2)
+    - apple/Torven/MainWindow/MainWindowController.swift (Story 4.1)
+    - apple/Torven/Popover/* (Wave 3 + Story 4.1)
+    - apple/Torven/Bridge/Generated/torven_core.swift (autogen UDL bindings)
+    - crates/torven-core/* (zero Rust changes)
+
+issues:
+  - id: DBT-002
+    severity: low
+    category: testing
+    description: >-
+      AC-9 (XCTest for `AggregatedSample.fromFFI`) is deferred because
+      apple/project.yml currently has `testTargets: []` per Wave 1 ADR
+      §4 (XCTest infra is a Wave 7 backlog item). The `fromFFI`
+      function is a straightforward 22-LOC map exercised at preview
+      time by the 840-sample mock. Story 4.0.5's Rust tests
+      (`crates/torven-core/tests/`) cover the aggregation logic
+      end-to-end.
+    suggested_action: >-
+      Carry forward to Wave 7 backlog along with DBT-001 (the same
+      deferral from Story 4.2 AC-7). When XCTest stands up, add a
+      single test case `testFromFFI_5VendorsAcrossDays_DeduplicatesAndSorts`
+      that feeds 3 buckets across 2 vendors and asserts ChartData
+      shape — sub-5-minute work once the target exists.
+
+  - id: HOV-001
+    severity: low
+    category: code
+    description: >-
+      Hover annotation card is positioned via `.overlay(alignment:
+      .topTrailing)` (StackedAreaChart.swift line 142) — it floats in
+      a fixed corner of the chart frame rather than following the
+      cursor. Acceptable for Wave 4 and consistent with the AC's
+      "annotation showing date + vendor + cost" loose wording, but a
+      richer per-mark anchor (annotation rendered near the hovered
+      x-position) would be a UX upgrade.
+    suggested_action: >-
+      Defer to Wave 5 polish or capture as a Wave 7 follow-up. The
+      anchor would use `proxy.position(forX:)` to compute the cursor's
+      view-space x and render the annotation nearby (with edge clamping
+      to avoid clipping). Not blocking.
+
+  - id: HOV-002
+    severity: low
+    category: testing
+    description: >-
+      AC-8 performance verification is "visual eyeball" via the
+      840-sample #Preview, not an instrumented frame-rate measurement.
+      The chart renders cleanly on Apple Silicon dev hardware per
+      dev D-6 inspection, but lower-end Intel Macs (oldest macOS 13
+      target hardware) haven't been verified. Wave 4 deployment is
+      assumed Apple Silicon-first per the project's broader macOS
+      pivot scope.
+    suggested_action: >-
+      Defer to Wave 6 (CI eval gate + observability) or as a Wave 7
+      polish item. Could be addressed by wrapping the chart in a
+      `TimelineView` and logging frame deltas in debug builds, or
+      manual smoke on an older Intel MacBook if one is accessible.
+      Not blocking.
+
+  - id: SMK-003
+    severity: low
+    category: testing
+    description: >-
+      Runtime smoke (chart visible, range switching, hover annotation,
+      empty state with empty history.db) deferred to Lorenzo bench per
+      project precedent (Story 3.2 AC-5, Story 3.3 AC-9, Story 4.1
+      SMK-001, Story 4.2 SMK-002). Code-level inspection confirms the
+      logic is correct; real-macOS interaction will batch with the
+      Wave 4 closing story (4.6 Budget Burn).
+    suggested_action: >-
+      Batch the 5-step smoke checklist (open Main Window → empty state
+      verify → seeded data verify → range switching verify → hover
+      verify) into the Wave 4 closing story's Change Log. Same
+      textual-audit-trail pattern as Wave 2/3.
+
+waiver:
+  active: false
+
+recommendations:
+  - >-
+    Accept the gate as PASS and proceed to @devops *push. Story 4.3
+    delivers the Wave 4 chart foundation with the highest code quality
+    of the Wave so far (CodeRabbit No findings, comprehensive design
+    rationale, 9 of 10 ACs verified at code level).
+  - >-
+    When Story 4.4 (Per-vendor chart grid) lands, the QA gate should
+    verify (1) ChartViewModel extension via `samplesByVendor`
+    `@Published` + `selectVendor(_:)` toggle, (2) cross-story
+    modification of StackedAreaChart to support `selectedVendor`
+    filter (story 4.4 explicitly flags this as a non-additive change),
+    (3) DES-001 carry-forward — bidirectional mode↔dateRange sync
+    becomes relevant once chart click-to-zoom enters via MiniVendorChart
+    tap callback.
+  - >-
+    DBT-001 (4.2 AC-7) + DBT-002 (4.3 AC-9) compound to make a clean
+    case for "Wave 7 Story X — Stand up XCTest target + add deferred
+    test cases for 4.2/4.3." Carry both into Wave 7 planning as a
+    single follow-up rather than per-story.
+  - >-
+    The ChartContent sub-view pattern (private struct, parent VM as
+    @ObservedObject, child VM as @StateObject(wrappedValue:))
+    becomes the template for Stories 4.4/4.5/4.6 when they add
+    sibling charts. Reference this gate's decision D-1 rationale
+    when documenting their composition.
+
+next_step: '@devops *push (Story 4.3 PR — Wave 4 Swift Charts foundation)'
+
+handoff:
+  next_agent: '@devops'
+  next_command: '*push'
+  condition: 'QA gate verdict is PASS — Status: InReview → Done'
