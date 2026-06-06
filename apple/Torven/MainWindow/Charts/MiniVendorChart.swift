@@ -82,7 +82,13 @@ struct MiniVendorChart: View {
             // `totalValue` was summed as `Double` to stay AreaMark-friendly,
             // but a request count is logically an integer — convert back at
             // the display boundary so we don't render "10.0 requests".
-            return "\(Int(totalValue.rounded())) requests"
+            // FMT-001 (Wave 4 polish): apply `.grouping(.automatic)` so a
+            // 30-day total like 12345 reads as "12.345 requests" (pt-BR) /
+            // "12,345 requests" (en-US) instead of cramped digits in the
+            // card header.
+            let formatted = Int(totalValue.rounded())
+                .formatted(IntegerFormatStyle<Int>().grouping(.automatic))
+            return "\(formatted) requests"
         }
     }
 

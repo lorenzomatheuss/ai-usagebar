@@ -843,10 +843,15 @@ fn aggregate_month_spend(
 /// `spent > 0` and `0.0` if `spent == 0`. The Swift side clamps the gauge
 /// value to `[0, 100]` for display.
 fn build_status(cfg: &BudgetConfig, spend_by_vendor: &HashMap<String, f64>) -> BudgetStatus {
-    let total_spent_usd: f64 = spend_by_vendor.values().sum();
+    // BUG-001 (Wave 4 polish): defensive `+ 0.0` collapses any -0.0 that
+    // sneaks in through `.sum::<f64>()` (IEEE 754 lets a sum of `-0.0`s
+    // remain `-0.0`). Without this, Swift's pt-BR currency formatter
+    // renders the negative sign bit as "-US$ 0,00" in the BudgetBurn label.
+    // The idiom is a no-op on every non-zero value.
+    let total_spent_usd: f64 = spend_by_vendor.values().sum::<f64>() + 0.0;
     let total_budget_usd = cfg.monthly_usd_total;
     let total_percent_used = match total_budget_usd {
-        Some(b) if b > 0.0 => (total_spent_usd / b) * 100.0,
+        Some(b) if b > 0.0 => (total_spent_usd / b) * 100.0 + 0.0,
         Some(_zero) if total_spent_usd > 0.0 => f64::INFINITY,
         Some(_zero) => 0.0,
         None => 0.0,
@@ -856,9 +861,11 @@ fn build_status(cfg: &BudgetConfig, spend_by_vendor: &HashMap<String, f64>) -> B
         .per_vendor
         .iter()
         .map(|(vendor_id, budget_usd)| {
-            let spent_usd = spend_by_vendor.get(vendor_id).copied().unwrap_or(0.0);
+            // BUG-001: same defensive `+ 0.0` so a negative-zero spend
+            // doesn't propagate into the per-vendor FFI payload.
+            let spent_usd = spend_by_vendor.get(vendor_id).copied().unwrap_or(0.0) + 0.0;
             let percent_used = match *budget_usd {
-                b if b > 0.0 => (spent_usd / b) * 100.0,
+                b if b > 0.0 => (spent_usd / b) * 100.0 + 0.0,
                 _zero if spent_usd > 0.0 => f64::INFINITY,
                 _ => 0.0,
             };
@@ -1139,6 +1146,45 @@ name = "ClienteAcme"
         let s = build_status(&cfg, &spend);
         assert!(s.total_percent_used.is_infinite());
         assert_eq!(s.total_spent_usd, 0.01);
+    }
+
+    #[test]
+    fn build_status_normalizes_negative_zero() {
+        // BUG-001 (Wave 4 polish): signed-zero (-0.0) propagating through to
+        // the FFI payload renders as "-US$ 0,00" under Swift's pt-BR locale
+        // currency formatter. The `+ 0.0` idiom in build_status collapses
+        // -0.0 → +0.0 (IEEE 754) without affecting any other value.
+        // We compare via `to_bits()` because the equality `0.0 == -0.0` is
+        // `true` in IEEE 754 — the sign bit is invisible to `==`.
+        let cfg = BudgetConfig {
+            monthly_usd_total: Some(1.0),
+            per_vendor: HashMap::from([("anthropic".to_string(), 1.0)]),
+        };
+        let mut spend = HashMap::new();
+        spend.insert("anthropic".to_string(), -0.0_f64);
+
+        let status = build_status(&cfg, &spend);
+
+        assert_eq!(
+            status.total_spent_usd.to_bits(),
+            0.0_f64.to_bits(),
+            "total_spent_usd leaked -0.0 sign bit"
+        );
+        assert_eq!(
+            status.per_vendor[0].spent_usd.to_bits(),
+            0.0_f64.to_bits(),
+            "per_vendor[0].spent_usd leaked -0.0 sign bit"
+        );
+        assert_eq!(
+            status.total_percent_used.to_bits(),
+            0.0_f64.to_bits(),
+            "total_percent_used leaked -0.0 sign bit"
+        );
+        assert_eq!(
+            status.per_vendor[0].percent_used.to_bits(),
+            0.0_f64.to_bits(),
+            "per_vendor[0].percent_used leaked -0.0 sign bit"
+        );
     }
 
     #[test]

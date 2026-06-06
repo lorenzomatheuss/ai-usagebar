@@ -118,7 +118,13 @@ struct DateRangePicker: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 220)
+            // LAY-001 (Wave 4 polish): tightened from 220 → 180 to match the
+            // ViewMode picker width set in Story 4.5. With 3 pickers +
+            // DateRangePicker in the top bar at 900pt window, the original
+            // 220pt overflowed by ~15pt when Custom mode added two
+            // DatePickers + Apply button. 180 frees up ~40pt of headroom so
+            // Apply remains visible at the default window width.
+            .frame(width: 180)
             .onValueChange(of: mode) { newMode in
                 handleModeChange(newMode)
             }
