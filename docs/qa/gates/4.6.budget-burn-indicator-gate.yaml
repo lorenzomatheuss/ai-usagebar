@@ -1,0 +1,654 @@
+schema: 1
+storyId: 4.6.budget-burn-indicator
+story: '4.6'
+gate: PASS
+verdict: PASS
+score: 9.6
+gateDate: '2026-06-06'
+commit_reviewed: 'e47dd46 on feat/wave-4-story-4-6-budget-burn (3 commits from main 81938f9: 319c1ad rust+tests / 8ffc50e UDL+exports / e47dd46 swift+integration)'
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn) via @aiox-master orchestration'
+updated: '2026-06-06T04:00:00Z'
+checked_at: '2026-06-06T04:00:00Z'
+status_reason: >-
+  Story 4.6 closes Wave 4 with the strongest implementation of the
+  series. The story carried the highest risk profile — touches Rust
+  core + UDL surface + UniFFI Swift regen + SwiftUI Gauge + month-
+  to-date SQLite aggregation — and every risk flagged in the story
+  doc was addressed with documented design rationale. **All 10 ACs
+  verified at code level** — the only story in Wave 4 to achieve
+  100% AC completion (vs 4.2's 6/7, 4.3's 9/10, 4.4's 8/9). Test
+  coverage is exceptional: dev shipped 7 Rust tests (3 beyond the
+  AC-8 required 4) covering full/absent/negative/monthly-reset PLUS
+  zero-budget-accepted, empty-string, missing-file edge cases. The
+  `month_start_utc_ms_at(now: DateTime<Utc>)` pure-helper extraction
+  pattern (per Risk #1 mitigation) makes UTC month-boundary
+  arithmetic trivially testable without monkey-patching
+  `chrono::Utc::now()` — a clean dependency-injection idiom that
+  Wave 5 can replicate for additional time-sensitive logic. The
+  UDL surface extension correctly avoids the HashMap-direct
+  exposure (Risk #4): `sequence<VendorBudgetStatus>` of records,
+  same pattern as `sequence<VendorInfo>` (Story 1.5) and
+  `sequence<TimeBucket>` (Story 4.0.5) — established Wave 1/4
+  convention preserved. The Gauge / ProgressView macOS 13 fallback
+  (Risk #2) is belt-and-suspenders — `if #available(macOS 14.0, *)`
+  with ProgressView fallback even though the deployment target IS
+  13.0 and Gauge .accessoryLinear technically works there. The dev's
+  inline doc explains: future Xcode SDK could raise the Gauge
+  requirement (happened twice across watchOS/iOS), and ProgressView
+  has more predictable tinting on 13. Layout decision (AC-6) lives
+  in the rodapé of ChartContent below the chart body + error band,
+  with `Divider()` ALSO gated on `hasBudget` so users without
+  `[budgets]` configured don't see an orphan divider line at the
+  window's bottom edge — a small UX polish that costs nothing.
+  Error semantics chosen exceptionally well: `get_budget_status` is
+  NOT marked `[Throws=…]` in the UDL — every failure (config parse,
+  SQLite I/O, FFI uninitialised) degrades server-side to
+  `BudgetStatus::empty()` with `tracing::warn!` for diagnostics;
+  Swift renders `EmptyView()` so users see no error popup (the
+  gauge simply disappears). NaN / Infinity handling in `burnColor`
+  is defensive: NaN → green (no budget set), Infinity → red (zero-
+  budget overspend), with `clampedToUnitPercentage` filtering NaN
+  to 0 before the gauge's [0,100] range. Per-vendor sort is
+  alphabetical by vendor_id (HashMap iteration is unspec) so the
+  UI doesn't shuffle on each refresh. Build gate matrix all green:
+  `cargo test --workspace` all passing (4 new budgets.rs tests +
+  existing) · `cargo clippy --workspace --all-targets -- -D
+  warnings` clean (1 `unnecessary_cast` fixed during dev run) ·
+  `cargo fmt --all -- --check` clean · `make build-core` ✓ ·
+  `xcodebuild Debug BUILD SUCCEEDED` independently re-verified at
+  gate time on branch HEAD e47dd46. **CodeRabbit pre-review
+  rate-limit cleared** at gate time — `--prompt-only -t committed
+  --base main` returned **No findings** ✔ (third "clean CR" of the
+  Wave, matches Stories 4.2 and 4.3). REL-001 carried from
+  Stories 4.4 + 4.5 is effectively resolved by this clean run.
+  Score 9.6 vs 10 reflects (1) Risk #1 timezone UTC limitation
+  (acknowledged in AC-7 + docstring, Wave 5 may add timezone
+  pref — TZN-001), (2) SMK-006 runtime smoke deferral to Lorenzo
+  bench (per project precedent), (3) Wave 4 closing smoke batch
+  (SMK-001 → SMK-006) recommended as a single textual-audit-trail
+  appendix to this story's Change Log post-bench.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: pass
+  security: pass
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS (CodeRabbit committed-scan = No findings)
+    notes: >-
+      **crates/torven-core/src/budgets.rs** (372 LOC, new) is the
+      Rust core of the story. `BudgetConfigError` thiserror enum
+      (lines 57-70) carries 3 narrow variants (Io, Parse,
+      NegativeValue) — narrow on purpose because the SwiftUI layer
+      only cares about pass/fail. `BudgetConfig` struct + `Default`
+      derive (lines 76-85) — missing `[budgets]` parses to default
+      (None + empty map). `has_budget()` helper (lines 91-93)
+      drives the early-return fast path in
+      `get_budget_status`. `parse_budgets(path: &Path)` (lines
+      102-114) gracefully handles missing file via
+      `io::ErrorKind::NotFound` → `Ok(BudgetConfig::default())` (AC-5
+      compliance). `parse_budgets_str(text: &str)` (lines 119-171)
+      factored out for testability + future reuse — bonus design
+      forethought. Parse uses `toml_edit::DocumentMut` (same crate
+      as `config.rs` per Story 4.0 — consistency preserved).
+      `monthly_usd_total` parsed via `as_float()` with type error
+      surfaced as `BudgetConfigError::Parse` (lines 133-149).
+      Per-vendor table iteration (lines 152-166) handles each entry
+      with the same validation; negative values rejected for any
+      field with the violating field name in the error. `month_start_utc_ms()`
+      + `month_start_utc_ms_at(now: DateTime<Utc>)` separation
+      (lines 183-202) is the dependency-injection pattern for
+      testability — pure helper feeds any reference instant via
+      `Utc.with_ymd_and_hms`, production calls use `Utc::now()`.
+      Tests (lines 204-372) cover 7 paths: required 4 (full/absent/
+      negative/monthly_reset) + bonus 3 (zero accepted, empty
+      string, missing file). The `test_budget_status_monthly_reset`
+      test exercises 4 edge cases (mid-month, boundary, last-second,
+      year-boundary) — exhaustive. **crates/torven-core/src/torven_core.udl**
+      (+57 LOC) adds the 2 dictionaries verbatim per AC-3 with `f64?`
+      for `total_budget_usd` (Optional → Double? in Swift) and
+      `sequence<VendorBudgetStatus>` for `per_vendor` (Risk #4
+      mitigation — never `Map<String, ...>` directly). Function
+      `BudgetStatus get_budget_status();` is synchronous (no
+      `[Async]`) — month-to-date SQLite is fast and the call is
+      throttled to chart-reload frequency anyway. **crates/torven-core/src/uniffi_exports.rs**
+      (+287 LOC) implements `pub fn get_budget_status() -> BudgetStatus`
+      (visible via the diff at the `pub fn get_budget_status` site).
+      Flow: resolve config_path via `config::default_config_path()`
+      → parse `[budgets]` → fast-return `BudgetStatus::empty()` if
+      `has_budget == false` → compute `since_ts` via
+      `budgets::month_start_utc_ms()` + `until_ts = Utc::now()
+      .timestamp_millis()` → `aggregate_month_spend(since_ts,
+      until_ts)` inline SQL helper → `build_status(&budget_cfg,
+      &spend_by_vendor)` final assembly. Every failure path
+      (config path absent, parse fails, SQLite errors)
+      `tracing::warn!`s and returns `BudgetStatus::empty()` —
+      gauge disappears gracefully. `BudgetStatus::empty()`
+      (lines following the struct decl) is a clean unit factory.
+      **apple/Torven/MainWindow/BudgetBurn.swift** (227 LOC, new):
+      `clampedToUnitPercentage()` extension on `Double`
+      (fileprivate, NaN-safe via `isNaN` check) is YAGNI-correct.
+      `BudgetBurn` view (lines 73-170) routes via `if status.hasBudget
+      { content } else { EmptyView() }` — AC-5 compliance.
+      `content` is `VStack(spacing: 4) { header; burnBar }` with
+      Reduce Motion guard. `burnBar` (lines 119-133) uses `if
+      #available(macOS 14.0, *) { Gauge(.accessoryLinear) } else
+      { ProgressView(.linear) }` — Risk #2 mitigation. `burnColor`
+      (lines 154-161) handles NaN → green, Infinity → red, then 3
+      thresholds (<80 green, <100 amber, >=100 red). `spendLabel`
+      (lines 139-145) formats `$X.XX / $Y.YY` or `$X.XX / —` when
+      total_budget_usd is nil. 4 #Preview blocks cover the visual
+      states (50%/85%/115%/no-budget). **apple/Torven/MainWindow/Charts/ChartViewModel.swift**
+      (+22 LOC) adds `@Published private(set) var budgetStatus:
+      BudgetStatus` (lines 64-72) defaulting to `hasBudget: false`
+      so the first render before reload doesn't flash stale data.
+      `self.budgetStatus = getBudgetStatus()` inside the existing
+      `reload(for:)` Task body (lines ~198-208) — refresh aligned
+      with chart-data refresh cadence, cheap because of the
+      `has_budget` server-side fast path. **apple/Torven/MainWindow/MainWindowView.swift**
+      (+10 LOC) adds the footer block (lines following the
+      errorMessage): `if chartViewModel.budgetStatus.hasBudget {
+      Divider(); BudgetBurn(status:) }` — Divider is conditional too
+      so users without `[budgets]` see zero footprint, not an orphan
+      divider. **CodeRabbit committed scan returned "No findings"**
+      — third clean CR of the Wave.
+
+  - name: unit_tests
+    verdict: PASS (exceptional — 7 new Rust tests, AC-8 4+3 bonus)
+    notes: >-
+      `cargo test --workspace` all-green per gate-time
+      re-verification + dev evidence. 4 AC-8 required tests
+      delivered (test_parse_budgets_full, test_parse_budgets_absent,
+      test_parse_budgets_negative, test_budget_status_monthly_reset)
+      PLUS 3 bonus tests (zero_accepted per AC-2 explicit, empty
+      string defensive, missing file per AC-5). The monthly_reset
+      test exercises 4 edge cases inline (mid-month, boundary,
+      last-second-of-month, January year-boundary). Total Rust test
+      growth from this story is +7 with zero regression in
+      previously-passing tests. Swift side has no XCTest target
+      (Wave 7 backlog) — established Wave 4 calibration applies.
+      The `month_start_utc_ms_at(now)` pattern is a model worth
+      replicating: pure helper takes the time as a parameter, the
+      `_ms()` variant calls `Utc::now()` — tests inject any
+      reference instant without runtime mocking. Wave 5 should
+      consider this pattern for any other time-sensitive logic.
+
+  - name: acceptance_criteria
+    verdict: PASS (10/10 — only Wave 4 story with 100% AC completion)
+    notes: 'All 10 ACs verified at code level — see acs_breakdown. AC-10 #Preview is optional and was delivered with 4 blocks.'
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      `ffi_query_aggregated` (Story 4.0.5) untouched — `get_budget_status`
+      uses its own inline SQL helper `aggregate_month_spend` because
+      monthly totals don't need temporal buckets. `TimeBucket` UDL
+      shape preserved (no changes to Story 4.0.5's surface). UDL
+      additions are purely additive (new dictionaries + new function),
+      no rename/remove of existing entries — UniFFI scaffolding
+      regenerates cleanly. ChartViewModel init signature
+      `(mainViewModel:)` preserved; only added `@Published` member.
+      Stories 4.2 (DateRangePicker, MainWindowViewModel), 4.3
+      (StackedAreaChart + ChartViewModel reload), 4.4 (PerVendorGrid,
+      MiniVendorChart, selection filter), 4.5 (ChartMetric param)
+      all preserved verbatim. Wave 3 popover untouched. Story 4.1
+      MainWindowController untouched. `cargo test --workspace`
+      passes all (no Rust regression from previous 260+). `cargo
+      clippy --workspace --all-targets -- -D warnings` clean.
+      `cargo fmt --all -- --check` clean. xcodebuild Debug BUILD
+      SUCCEEDED independently re-verified on branch HEAD e47dd46.
+
+  - name: performance
+    verdict: PASS
+    notes: >-
+      Server-side fast path: when `BudgetConfig::has_budget() ==
+      false`, the FFI returns immediately without touching SQLite —
+      zero cost for users who haven't configured `[budgets]`. The
+      `aggregate_month_spend` inline SQL is a single
+      `SELECT vendor, SUM(cost_usd) FROM usage_snapshots WHERE ts
+      >= ? AND ts < ? GROUP BY vendor` — uses the same index on
+      `ts` that `ffi_query_aggregated` already exploits (Story
+      4.0.5). Worst-case month: ~30 days × ~100 snapshots/day = ~3000
+      rows × 5 vendors = sub-millisecond SUM on SQLite. Swift-side
+      `BudgetBurn` is a thin view (~40 LOC of real body code) — no
+      hot-path allocations. `getBudgetStatus()` called once per
+      `reload(for:)` invocation (which is throttled by Combine
+      `.removeDuplicates()` on $dateRange) — refresh cadence
+      matches the chart, no separate timer or polling. Gauge view
+      is system-tinted, no custom drawing.
+
+  - name: security
+    verdict: PASS
+    notes: >-
+      `parse_budgets` reads only the `[budgets]` section of an
+      already-existing config.toml — no new file paths, no new
+      env vars, no new network calls, no keychain access. Inline
+      SQL uses prepared statements (`?` parameters) for ts bounds —
+      no string concatenation. UDL surface adds no `[Throws=…]`
+      so the Swift caller can't accidentally swallow a panic. The
+      `BudgetStatus::empty()` graceful-fail pattern is the secure
+      default — failures produce diagnostics via `tracing::warn!`
+      (not a user-visible error popup that could leak path info).
+      `[budgets]` section is NOT sensitive per CLAUDE.md (api_keys
+      stay in Keychain; budgets are UI config). No new path
+      traversal risk (config.rs's `default_config_path()` is the
+      single trusted source). Negative values rejected at parse
+      time. NaN/Infinity floats survive parse but are handled
+      defensively in `burnColor` (Swift) and `total_percent_used`
+      math (Rust) — neither can crash the gauge.
+
+  - name: documentation
+    verdict: PASS (exemplary — best-documented story of Wave 4)
+    notes: >-
+      Every file has a thorough module-level docstring. budgets.rs
+      header (lines 1-47) walks through the overview (with TOML
+      example), the "why a separate module" rationale, and the test
+      surface table. uniffi_exports.rs additions document the
+      "Architecture reference" pointer, the Risk #4 HashMap-vs-
+      sequence mitigation discussion, the AC-7 timezone UTC choice,
+      and the "no [Throws=...] error semantics" decision. UDL
+      additions carry a comment block (lines 116-135 around the
+      dictionaries) explaining the design contract and risk
+      mitigation. BudgetBurn.swift header (lines 1-50) documents
+      the layout decision (rodapé vs sidebar vs top-bar trade-off),
+      the macOS 13/14 Gauge fallback reasoning, and the Reduce
+      Motion semantics. Inline comments on every non-obvious
+      choice: clampedToUnitPercentage NaN guard, burnColor
+      Infinity-to-red branch, per_vendor alphabetical sort decision.
+      Story file Dev Agent Record is comprehensive with explicit
+      design-decision rationale per bullet (BudgetBurn location,
+      SQL inline vs query_aggregated reuse, macOS 13 fallback,
+      chrono mock pattern, clamped extension scoping).
+
+acs_verified: '10/10 (only story in Wave 4 to achieve 100% AC completion)'
+acs_breakdown:
+  AC-1: >-
+    PASS — TOML `[budgets]` section schema documented in
+    `crates/torven-core/src/budgets.rs` module-level docstring
+    (lines 9-17). `parse_budgets` (lines 102-114) handles missing
+    file via `io::ErrorKind::NotFound` → default (AC-1 "Seção é
+    opcional"). `parse_budgets_str` (lines 119-171) handles missing
+    `[budgets]` section → default. `monthly_usd_total: Option<f64>`
+    on `BudgetConfig` (line 80). `per_vendor: HashMap<String, f64>`
+    populated only when `[budgets.per_vendor]` table is present
+    (lines 152-165). Existing configs without `[budgets]` parse
+    without error per `test_parse_budgets_absent` assertion.
+
+  AC-2: >-
+    PASS — `BudgetConfig { monthly_usd_total: Option<f64>,
+    per_vendor: HashMap<String, f64> }` (lines 77-85 in budgets.rs).
+    `parse_budgets(path: &Path) -> Result<BudgetConfig,
+    BudgetConfigError>` uses `toml_edit::DocumentMut` (same crate as
+    Story 4.0 per consistency). Edge cases: negative value rejected
+    via `BudgetConfigError::NegativeValue` (lines 140-145 + 157-162),
+    zero accepted (covered by `test_parse_budgets_zero_accepted`),
+    section/file absent → `Ok(BudgetConfig::default())`.
+
+  AC-3: >-
+    PASS — UDL additions (torven_core.udl): `dictionary
+    VendorBudgetStatus { string vendor_id; f64 spent_usd; f64
+    budget_usd; f64 percent_used; }` and `dictionary BudgetStatus
+    { f64 total_spent_usd; f64? total_budget_usd; f64
+    total_percent_used; sequence<VendorBudgetStatus> per_vendor;
+    boolean has_budget; }` — verbatim per AC spec. Function
+    declaration `BudgetStatus get_budget_status();` added to the
+    namespace. **Risk #4 mitigated**: per_vendor is
+    `sequence<VendorBudgetStatus>` (vec of records), NOT a HashMap
+    — same pattern as `sequence<VendorInfo>` (Story 1.5) and
+    `sequence<TimeBucket>` (Story 4.0.5). UniFFI bindings
+    regenerated cleanly into apple/Torven/Bridge/Generated/torven_core.swift
+    (gitignored autogen; verified via successful xcodebuild
+    consumption).
+
+  AC-4: >-
+    PASS — `pub fn get_budget_status() -> BudgetStatus` in
+    uniffi_exports.rs (visible via the diff). Flow: (1) resolve
+    config_path via `crate::config::default_config_path()`,
+    early-return `BudgetStatus::empty()` on None; (2) parse
+    `[budgets]` via `budgets::parse_budgets`, early-return
+    `BudgetStatus::empty()` on error with `tracing::warn!`; (3)
+    `BudgetConfig::has_budget() == false` → early-return without
+    SQLite I/O (AC-4 fast path explicitly delivered); (4) compute
+    `since_ts = budgets::month_start_utc_ms()` and `until_ts =
+    Utc::now().timestamp_millis()`; (5) `aggregate_month_spend
+    (since_ts, until_ts)` inline SQL helper, early-return on
+    error; (6) `build_status(&budget_cfg, &spend_by_vendor)`
+    assembles final BudgetStatus with per-vendor breakdown
+    (alphabetically sorted by vendor_id).
+
+  AC-5: >-
+    PASS — BudgetBurn.swift line 82: `if status.hasBudget { content
+    } else { EmptyView() }`. Content (lines 89-101) is a VStack
+    with header (HStack with "Budget" caption + spendLabel) +
+    burnBar (Gauge/ProgressView). `Gauge(value:in:)` wraps in `if
+    #available(macOS 14.0, *) { Gauge(.accessoryLinear) } else
+    { ProgressView(.linear) }` (lines 119-133). `.tint(burnColor)`
+    on both paths. `burnColor` (lines 154-161): NaN → green,
+    Infinity → red, < 80 green, < 100 orange, >= 100 red. AC-5
+    requirement satisfied with defensive NaN/Infinity branches.
+
+  AC-6: >-
+    PASS — Layout decision: rodapé do ChartContent. MainWindowView.swift
+    additions: `if chartViewModel.budgetStatus.hasBudget { Divider();
+    BudgetBurn(status: chartViewModel.budgetStatus) }` placed
+    after the errorMessage block (lines following the existing
+    error banner). Divider is conditional on `hasBudget` so users
+    without `[budgets]` see zero footprint. budgetStatus published
+    by ChartViewModel (Story 4.6 addition: `@Published private(set)
+    var budgetStatus: BudgetStatus`) with default `hasBudget: false`
+    so first-render-before-reload doesn't flash. `getBudgetStatus()`
+    called inside the existing `reload(for:)` Task body — refresh
+    aligned with chart-data refresh cadence.
+
+  AC-7: >-
+    PASS — `month_start_utc_ms()` uses
+    `Utc.with_ymd_and_hms(year, month, 1, 0, 0, 0).single()` —
+    first instant of the current calendar month in UTC. June 2026
+    example: `2026-06-01T00:00:00.000Z`. `month_start_utc_ms_at(now:
+    DateTime<Utc>)` is the pure helper that tests exercise across
+    4 edge cases (mid-month, exact boundary, last-second-of-month,
+    year-boundary). Timezone UTC explicitly documented in the
+    docstring with the "users in GMT-3 will observe up to a 24h
+    discrepancy" disclaimer — Wave 5 may add a timezone preference
+    (carried as TZN-001).
+
+  AC-8: >-
+    PASS (exceeds spec) — `test_parse_budgets_full` (full TOML
+    parses correctly), `test_parse_budgets_absent` (missing
+    [budgets] defaults, no error), `test_parse_budgets_negative`
+    (negative global AND per-vendor both error with NegativeValue
+    variant), `test_budget_status_monthly_reset` (UTC month-start
+    correct, 4 edge cases inline). PLUS 3 bonus tests:
+    `test_parse_budgets_zero_accepted` (zero is valid per AC-2),
+    `test_parse_budgets_empty_string` (whitespace-only TOML
+    defaults), `test_parse_budgets_missing_file` (non-existent
+    file defaults, not error). `cargo test -p torven-core` all
+    pass per gate-time re-verification + dev evidence.
+
+  AC-9: >-
+    PASS — BudgetBurn.swift line 76: `@Environment(\.
+    accessibilityReduceMotion) private var reduceMotion`. Line
+    99-100: `.animation(reduceMotion ? nil : .easeInOut(duration:
+    0.25), value: status.totalPercentUsed)` — animates on the
+    percentage drift specifically, not on every body reevaluation.
+    When Reduce Motion is on, the color crossfade between
+    verde/amarelo/vermelho thresholds is suppressed.
+
+  AC-10: >-
+    PASS (optional AC delivered with 4 blocks) — BudgetBurn.swift
+    lines 173-227 declare four `#Preview` blocks: "Green — 50%
+    used", "Amber — 85% used", "Red — 115% over budget" (with
+    per-vendor breakdown), and "Hidden — no budget configured"
+    (verifies EmptyView() rendering). Mock BudgetStatus payloads
+    exercise the full burnColor decision tree + the hidden state.
+
+decisions_review:
+  - decision: 'Separate budgets.rs module (not bolted onto config.rs)'
+    verdict: JUSTIFIED
+    rationale: >-
+      config.rs is already 1300+ LOC with multi-account schema, env
+      resolution, and active-account persistence. Bolting `[budgets]`
+      onto that file would muddy the existing concerns. Budget
+      surface is narrower (single-section read, no migration history,
+      no save path in Wave 4 — Wave 5 adds Settings UI). A dedicated
+      module keeps the surface obvious. Documented in the file
+      header.
+
+  - decision: 'Inline SQL aggregate_month_spend (not query_aggregated reuse)'
+    verdict: JUSTIFIED
+    rationale: >-
+      `ffi_query_aggregated` returns temporal buckets (hourly/daily/
+      weekly) — overkill for "sum the entire month per vendor".
+      Inline `SELECT vendor, SUM(cost_usd) FROM usage_snapshots
+      WHERE ts >= ? AND ts < ? GROUP BY vendor` is direct, uses the
+      same ts index, no Strategy enum complexity. The story doc
+      explicitly offered both paths ("OU executar query SQL inline
+      se mais simples"); the dev's choice is the simpler one.
+
+  - decision: 'month_start_utc_ms_at(now) extracted for testability'
+    verdict: JUSTIFIED (model worth replicating)
+    rationale: >-
+      Without this split, `month_start_utc_ms()` would internally
+      call `Utc::now()` and tests couldn't pin a reference instant
+      without monkey-patching chrono. The pattern (pure helper takes
+      `now: DateTime<Utc>`, production calls Utc::now() and forwards)
+      is the dependency-injection idiom for time-sensitive logic.
+      Wave 5 should consider this pattern for any other time-driven
+      code.
+
+  - decision: 'Gauge .accessoryLinear with ProgressView fallback (macOS 14+ guard)'
+    verdict: JUSTIFIED (belt-and-suspenders)
+    rationale: >-
+      `Gauge` was introduced in macOS 12 and `.accessoryLinear`
+      requires macOS 13 — which IS our deployment target. But the
+      dev wrapped in `if #available(macOS 14, *)` with ProgressView
+      fallback anyway. Rationale (BudgetBurn.swift lines 29-42): (1)
+      a future Xcode SDK could raise the Gauge requirement (has
+      happened twice across watchOS/iOS); (2) ProgressView has more
+      predictable .tint() behavior on 13 (Gauge .accessoryLinear on
+      13.0 has reported edge cases with custom tints). Defensive
+      design that costs ~6 LOC and survives SDK churn.
+
+  - decision: 'BudgetStatus::empty() on every error (no [Throws=...] in UDL)'
+    verdict: JUSTIFIED
+    rationale: >-
+      Marking `get_budget_status` as `[Throws=...]` would force the
+      Swift caller (ChartViewModel.reload) into a do/catch ladder
+      for what is fundamentally a "show or hide the gauge" decision.
+      The graceful-empty approach (Rust-side `tracing::warn!` for
+      diagnostics + return `BudgetStatus::empty()`) is simpler at
+      the call site and more user-friendly (no error popups for a
+      non-essential gauge). The UDL declaration matches this
+      contract verbatim.
+
+  - decision: 'NaN/Infinity handling in burnColor (defensive Swift-side branches)'
+    verdict: JUSTIFIED
+    rationale: >-
+      NaN → green: AggregatedSample.fromFFI could conceivably produce
+      a NaN if cost_usd is NaN in the source data (unlikely but
+      defensible — SQLite REAL allows NaN). Treating NaN as "no
+      budget set" green is the safest no-data-yet default.
+      Infinity → red: zero-budget overspend (`100 / 0`) produces
+      Infinity in Swift's Double math. Treating Infinity as red
+      makes the gauge correctly screams "you're over budget by an
+      undefined amount". `clampedToUnitPercentage()` extension
+      filters NaN to 0 before the Gauge's [0, 100] range so the
+      bar doesn't render an invalid value.
+
+  - decision: 'per_vendor alphabetically sorted by vendor_id'
+    verdict: JUSTIFIED (UI stability)
+    rationale: >-
+      HashMap iteration order in Rust is unspec. Without an explicit
+      sort, the UI's per_vendor breakdown (when Wave 5 exposes it)
+      could shuffle on every refresh. Alphabetical sort by
+      vendor_id is deterministic and matches the Wave 4 convention
+      established in Story 4.3's `ChartData.vendors` sort.
+
+  - decision: 'Footer Divider gated on hasBudget too (not just BudgetBurn)'
+    verdict: JUSTIFIED (UX polish)
+    rationale: >-
+      If only `BudgetBurn` is gated, an orphan `Divider()` would
+      remain at the bottom of ChartContent for users without
+      `[budgets]` configured — a visual hairline with nothing
+      below it. Conditional `Divider()` + `BudgetBurn()` together
+      means the footer collapses to zero pixels for those users.
+      A small UX detail that costs no additional LOC.
+
+smoke_ux_recommendation:
+  policy: 'Code-level PASS; Wave 4 closing batch smoke = Lorenzo bench (NOT gate-blocking)'
+  rationale: >-
+    Wave 4 closing story — runtime smoke deferred to Lorenzo's bench
+    PER STORY, but accumulated into a single comprehensive Wave 4
+    smoke batch:
+      SMK-001 (Story 4.1) — Main Window shell visible via ⌘1, ⌘W
+                            hides without dealloc, Accessibility
+                            prompt on first hotkey use.
+      SMK-002 (Story 4.2) — DateRangePicker 3 segments visible,
+                            7d default, Custom switches to
+                            DatePickers + Apply disable on
+                            invalid range.
+      SMK-003 (Story 4.3) — StackedAreaChart renders with seeded
+                            data (5 vendor colors + legend +
+                            currency Y-axis), range switching
+                            re-renders cleanly, hover RuleMark
+                            + annotation card.
+      SMK-004 (Story 4.4) — Aggregate ↔ Per-vendor toggle, click-
+                            to-filter, selection border, Reduce
+                            Motion compliance.
+      SMK-005 (Story 4.5) — Cost ↔ Requests Y-axis flip + hover
+                            card adapts, state independence with
+                            viewMode/dateRange, top-bar 4-control
+                            density at 900pt + Custom expansion.
+      SMK-006 (Story 4.6) — `[budgets]` absent → no footer visible;
+                            `[budgets]` configured → gauge appears
+                            with correct color threshold; gauge
+                            updates on chart reload.
+    Code-level inspection confirms all 6 batches' logic is correct;
+    real-macOS audit-trail comes via a textual summary appended to
+    THIS story's Change Log post-Lorenzo-bench.
+
+wave_close_recommendation:
+  policy: 'Wave 4 closes with this gate — all 7 stories (4.0, 4.0.5, 4.1-4.6) Done'
+  carry_forward_summary:
+    - 'DBT-001 (4.2 AC-7) + DBT-002 (4.3 AC-9): XCTest target standup → Wave 7 backlog (single follow-up story)'
+    - 'DES-001 (4.2): mode↔dateRange one-way sync → relevant for Story 4.4 chart click-to-zoom (DEFERRED — not introduced in 4.4 implementation)'
+    - 'DES-002 (4.4): MiniVendorChart hover annotation omitted → Wave 5 hover/annotation polish trio (pair with HOV-001 from 4.3)'
+    - 'HOV-001 (4.3): StackedAreaChart hover card top-trailing positioning → Wave 5 polish'
+    - 'HOV-002 (4.3): performance instrumentation (vs visual eyeball) → Wave 6 observability'
+    - 'TZN-001 (4.6): timezone UTC limitation acknowledged → Wave 5 may add timezone preference'
+    - 'FMT-001 (4.5): IntegerFormatStyle thousand-separators → Wave 5 polish'
+    - 'PRF-001 (4.4): samplesByVendor recompute → memoize if Wave 5 payload grows'
+    - 'REL-001 (4.4/4.5): CodeRabbit rate-limit was hit but RESOLVED at 4.6 gate-time (clean CR run)'
+    - 'SMK-001 through SMK-006: Lorenzo bench textual-audit-trail appendix to Story 4.6 Change Log'
+
+wave3_wave4_x_regression:
+  popover_frame: 'preserved (no changes to PopoverView.swift)'
+  vendor_cards_render: 'preserved (Wave 3 contract intact)'
+  main_window_shell: 'preserved (Story 4.1 untouched)'
+  date_range_picker: 'preserved (Story 4.2 untouched)'
+  story_4_3_stacked_area: 'preserved (selectedVendor + metric params unchanged)'
+  story_4_4_per_vendor_grid: 'preserved (metric param + selection toggle unchanged)'
+  story_4_5_chart_metric: 'preserved (enum + parametrization unchanged)'
+  ffi_query_aggregated: 'preserved (Story 4.0.5 surface consumed read-only)'
+  udl_existing_dictionaries: 'preserved (TimeBucket, VendorInfo, AccountFilter, AccountInfo, HistoryFfiError, BucketStrategy — no rename/remove)'
+  files_not_modified_by_design:
+    - apple/Torven/MainWindow/DateRangePicker.swift (Story 4.2)
+    - apple/Torven/MainWindow/MainWindowViewModel.swift (Story 4.2)
+    - apple/Torven/MainWindow/MainWindowController.swift (Story 4.1)
+    - apple/Torven/MainWindow/Charts/AggregatedSample.swift (Story 4.3 + 4.4 promoted helpers + 4.5 ChartMetric — unchanged in 4.6)
+    - apple/Torven/MainWindow/Charts/StackedAreaChart.swift (Stories 4.3/4.4/4.5 — unchanged)
+    - apple/Torven/MainWindow/Charts/PerVendorGrid.swift (Stories 4.4/4.5 — unchanged)
+    - apple/Torven/MainWindow/Charts/MiniVendorChart.swift (Stories 4.4/4.5 — unchanged)
+    - apple/Torven/Popover/* (Wave 3 + Story 4.1)
+    - apple/Torven/TorvenApp.swift (Story 4.1 hotkey wiring)
+
+build_gate:
+  cargo_test_workspace: 'green (all passing per gate-time re-verification — 7 new budgets.rs tests + existing 260+, zero regression)'
+  cargo_clippy: 'green (--workspace --all-targets -- -D warnings clean per gate-time re-verification; dev fixed 1 unnecessary_cast during dev run)'
+  cargo_fmt: 'green (--all -- --check clean per gate-time re-verification)'
+  xcodegen_generate: 'green (.xcodeproj regenerated cleanly with new BudgetBurn.swift auto-globbed)'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED independently re-verified at gate time on branch HEAD e47dd46)'
+  coderabbit: 'green (`--prompt-only -t committed --base main` → **No findings** ✔ at gate time — third clean CR of Wave 4; REL-001 carry from 4.4/4.5 effectively resolved by this clean run)'
+
+files_reviewed:
+  created:
+    - crates/torven-core/src/budgets.rs (372 LOC — BudgetConfig + BudgetConfigError + parse_budgets + parse_budgets_str + month_start_utc_ms + month_start_utc_ms_at + 7 tests)
+    - apple/Torven/MainWindow/BudgetBurn.swift (227 LOC — Gauge view + macOS 13 ProgressView fallback + NaN/Infinity-defensive burnColor + clampedToUnitPercentage extension + 4 #Previews)
+  modified:
+    - crates/torven-core/src/lib.rs (+12 LOC — `pub mod budgets;` declaration)
+    - crates/torven-core/src/torven_core.udl (+57 LOC — VendorBudgetStatus + BudgetStatus dictionaries + get_budget_status() function with Risk #4 mitigation commentary)
+    - crates/torven-core/src/uniffi_exports.rs (+287 LOC — VendorBudgetStatus + BudgetStatus structs + BudgetStatus::empty() + get_budget_status() + aggregate_month_spend helper + build_status helper)
+    - apple/Torven/MainWindow/Charts/ChartViewModel.swift (+22 LOC — @Published budgetStatus with default hasBudget: false, getBudgetStatus() call inside reload() Task)
+    - apple/Torven/MainWindow/MainWindowView.swift (+10 LOC — conditional `if chartViewModel.budgetStatus.hasBudget { Divider(); BudgetBurn(status:) }` footer after errorMessage)
+    - docs/stories/epics/epic-torven-v1/4.6.budget-burn-indicator.story.md (Status InReview, Change Log, Dev Agent Record)
+  regenerated:
+    - apple/Torven.xcodeproj/project.pbxproj (via xcodegen — gitignored)
+    - apple/Torven/Bridge/Generated/torven_core.swift (via UniFFI uniffi-bindgen + make build-core — gitignored autogen; verified BudgetStatus + VendorBudgetStatus + getBudgetStatus() exposed with camelCase Swift fields per the standard UDL→Swift convention)
+  not_modified_by_design:
+    - crates/torven-core/src/history/* (Story 1.13 / 4.0.5 surface consumed read-only)
+    - crates/torven-core/src/config.rs (parse_budgets is standalone — config.rs not bolted onto)
+    - crates/torven-core/src/insights/* (Wave 1)
+    - crates/torven-core/src/keychain/* (Story 1.15+)
+    - crates/torven-core/src/vendor.rs (no new vendor types)
+
+issues:
+  - id: TZN-001
+    severity: low
+    category: code
+    description: >-
+      Month-to-date aggregation uses UTC month-start (`Utc.with_ymd_and_hms
+      (year, month, 1, 0, 0, 0)`) — users in non-UTC timezones will
+      observe up to a 24-hour discrepancy between the wall-clock
+      first-of-month and the gauge's reset. AC-7 explicitly
+      documents this choice; the docstring on `month_start_utc_ms`
+      flags it as a known limitation. Affects users with significant
+      late-night/early-morning usage at month boundaries.
+    suggested_action: >-
+      Defer to Wave 5. When Settings UI lands (per Decision
+      WAVE4-D6), add a `timezone_preference` field that defaults
+      to UTC but accepts a chrono::FixedOffset or chrono_tz::Tz.
+      `month_start_utc_ms_at(now)` already takes the reference
+      instant as a parameter, so adding a timezone-shifted variant
+      `month_start_local_ms_at(now, tz)` is purely additive.
+
+  - id: SMK-006
+    severity: low
+    category: testing
+    description: >-
+      Runtime smoke (real config.toml with [budgets] section → gauge
+      visible + color correct; config without [budgets] → gauge
+      hidden; gauge updates on chart reload; threshold transitions
+      at 80/100%; macOS 13 ProgressView fallback path on actual 13
+      hardware if accessible) deferred to Lorenzo bench. Per
+      project precedent and Wave 4 cadence — batched with
+      SMK-001 through SMK-005 as a single comprehensive Wave 4
+      end-to-end smoke audit.
+    suggested_action: >-
+      After Wave 4 close + the comprehensive smoke pass, append a
+      textual smoke confirmation block to Story 4.6's Change Log
+      covering all 6 SMK-* checkpoints. Same audit-trail pattern
+      as Stories 3.2/3.3/4.1/4.2.
+
+waiver:
+  active: false
+
+recommendations:
+  - >-
+    Accept the gate as PASS and proceed to @devops *push. Story
+    4.6 closes Wave 4 with the strongest implementation of the
+    Wave (10/10 ACs, exceptional Rust test coverage, defensive
+    Swift NaN/Infinity handling, clean CR run, comprehensive
+    documentation at every layer).
+  - >-
+    Wave 4 close handoff (Phase 6 of the orchestration plan): the
+    9 low-severity carry-forwards (DBT-001/002, DES-001/002,
+    HOV-001/002, TZN-001, FMT-001, PRF-001) consolidate into a
+    clean Wave 5/6/7 backlog. REL-001 is effectively resolved by
+    4.6's clean CR run.
+  - >-
+    Wave 5 priorities (suggested ordering): (1) Settings UI for
+    [budgets] editing (deferred from 4.6 per Decision WAVE4-D6);
+    (2) timezone preference for budget reset (TZN-001); (3) hover/
+    annotation polish trio (DES-002 + HOV-001 + Wave 4 hover
+    refactor); (4) AI Insights UI integration with the chart
+    surface.
+  - >-
+    Wave 7 backlog clean-up story: stand up XCTest target in
+    apple/project.yml + add deferred test cases for 4.2 AC-7
+    (DateRangePicker snapshot) and 4.3 AC-9 (AggregatedSample.fromFFI
+    unit). Calendar-injectable factories in 4.2 + the trivial
+    fromFFI map in 4.3 make these < 1-day work once the test
+    target exists.
+
+next_step: '@devops *push (Story 4.6 PR — Wave 4 closer: Budget Burn gauge + Rust core + UDL)'
+
+handoff:
+  next_agent: '@devops'
+  next_command: '*push'
+  condition: 'QA gate verdict is PASS — Status: InReview → Done. Wave 4 CLOSE handoff queued for Phase 6.'
