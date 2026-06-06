@@ -2,27 +2,46 @@
 //  MainWindowView.swift
 //  Torven
 //
-//  Story 4.1 (Wave 4): placeholder SwiftUI shell for the Main Window.
-//  Hosted by MainWindowController via NSHostingView. The real content
-//  arrives in:
-//    - Story 4.2 — Date Range Picker (header row)
-//    - Story 4.3 — Cost-by-vendor stacked bar chart
-//    - Story 4.4 — Tokens / Requests line charts
-//    - Story 4.5 — Budget burn-down meter
-//    - Story 4.6 — Empty/loading/error states
-//
-//  This shell is intentionally minimal — only an empty `Text` so the
-//  900×600 window has visible content and the build link is exercised.
+//  Wave 4 Main Window root. Owns the `MainWindowViewModel` and lays out:
+//    - top bar : DateRangePicker (Story 4.2)
+//                 + future Cost/Requests toggle (Story 4.5)
+//    - content : empty Spacer for now — Stories 4.3-4.6 add the charts
+//                that observe `viewModel.$dateRange`.
 //
 
 import SwiftUI
 
 struct MainWindowView: View {
+    @StateObject private var viewModel = MainWindowViewModel()
+
     var body: some View {
-        Text("History — Wave 4")
-            .font(.title2)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            topBar
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
+            Divider()
+
+            contentArea
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            DateRangePicker(dateRange: $viewModel.dateRange)
+            Spacer()
+        }
+    }
+
+    private var contentArea: some View {
+        // Placeholder until Story 4.3 wires the cost-by-vendor chart.
+        VStack {
+            Text("History — Wave 4")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
