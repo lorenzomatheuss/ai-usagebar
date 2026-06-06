@@ -123,7 +123,13 @@ struct StackedAreaChart: View {
             // directly avoids a stringly-typed "%d" path. Trailing "requests"
             // word disambiguates the count from a currency value in the
             // hover popover.
-            return "\(sample.requestCount) requests"
+            // FMT-001 (Wave 4 polish): `.grouping(.automatic)` matches the
+            // Y-axis tick formatting so the hover card and the axis labels
+            // both render large counts with locale-aware thousand
+            // separators ("1.234" pt-BR / "1,234" en-US).
+            let formatted = sample.requestCount
+                .formatted(IntegerFormatStyle<Int>().grouping(.automatic))
+            return "\(formatted) requests"
         }
     }
 
@@ -162,10 +168,14 @@ struct StackedAreaChart: View {
             // safe way to spell "no decimals, no currency" — `Decimal.FormatStyle`
             // also works but pulls in a Foundation type the chart doesn't
             // otherwise need.
+            //
+            // FMT-001 (Wave 4 polish): `.grouping(.automatic)` adds locale-
+            // aware thousand separators so request counts ≥1000 read cleanly
+            // ("1.234" pt-BR / "1,234" en-US) instead of cramped digits.
             if metric == .cost {
                 AxisMarks(format: .currency(code: "USD"))
             } else {
-                AxisMarks(format: IntegerFormatStyle<Int>())
+                AxisMarks(format: IntegerFormatStyle<Int>().grouping(.automatic))
             }
         }
         .chartLegend(position: .bottom, alignment: .center)

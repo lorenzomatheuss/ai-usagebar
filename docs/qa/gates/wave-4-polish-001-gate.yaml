@@ -1,0 +1,112 @@
+schema: 1
+gate_id: wave-4-polish-001
+type: polish (post-wave-close)
+parent_wave: 4
+gate: PASS
+verdict: PASS
+score: 9.4
+gateDate: '2026-06-06'
+commit_reviewed: '16492fd on feat/wave-4-polish-001 (off main cfba0ee — post Wave 4 closer)'
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn) via @aiox-master orchestration'
+updated: '2026-06-06T05:00:00Z'
+
+status_reason: >-
+  Post-Wave-4 polish bundle: 3 fixes in single branch, single PR. All
+  three identified during Wave 4 smoke prep (12 checks confirmed via
+  Lorenzo's screenshots, 28 awaiting bench). Diagnosis was rigorous:
+  BUG-001 root-cause traced via aiox-qa (signed-zero IEEE 754 +
+  pt-BR currency formatter); LAY-001 traced via top-bar width math
+  (Story 4.5 tightened ViewMode 220→180 but missed DateRangePicker
+  Picker — overflow ~15pt when Custom mode active at 900pt window);
+  FMT-001 was a carry-forward from Story 4.5 gate (thousand
+  separators for IntegerFormatStyle). Fix execution by aiox-dev:
+  3 fixes + 1 new Rust unit test (`build_status_normalizes_negative_zero`)
+  using `to_bits()` bitwise comparison (since `0.0 == -0.0` is true
+  in IEEE 754, only bitwise catches the sign bit). Defensive
+  `+ 0.0` applied at all 3 propagation sites in `build_status`
+  (total_spent_usd, total_percent_used div branch, per_vendor
+  spent_usd + percent_used). Dev expanded the test to assert all
+  4 fields locking down all 3 fix sites at once — good belt-and-
+  suspenders. FMT-001 applied consistently across StackedAreaChart
+  Y-axis + hover card + MiniVendorChart header total (4th file
+  discovered via grep — proper scope expansion). LAY-001 reduced
+  DateRangePicker Picker frame 220→180pt with 5-line inline
+  rationale documenting why and the math. Build gates all green:
+  `cargo test -p torven-core` includes the new test passing (5 tests
+  in `uniffi_exports::tests` module — build_status_normalizes_negative_zero
+  + 4 pre-existing 4.6 tests); `cargo clippy -D warnings` clean;
+  `cargo fmt --check` clean; `xcodebuild Debug BUILD SUCCEEDED`
+  independently re-verified at gate time on branch HEAD 16492fd.
+  CodeRabbit `--prompt-only -t uncommitted` (dev pre-commit run) →
+  0 findings on the 4 changed files, 1 MINOR finding on untracked
+  `docs/cases-drafts/personal/torven-local-first-llm-usage-tracker.md`
+  (unrelated). Score 9.4 vs 10 reflects (1) BUG-001 was not
+  empirically reproduced before fix (aiox-qa couldn't trigger the
+  -0.0 path with current data — fix is defensive against IEEE 754
+  semantics, not against a confirmed code path), (2) LAY-001 fix
+  is dimension-tuned at 900pt default window; users running narrow
+  windows may still see overflow (acknowledged as Wave 5 if it
+  resurfaces).
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: pass
+  security: pass
+  documentation: pass
+
+fixes_applied:
+  - id: BUG-001
+    title: 'BudgetBurn label shows "-US$ 0,00" instead of "US$ 0,00"'
+    severity: low (cosmetic, "polished demo killer" per portfolio context)
+    cause: 'signed-zero (-0.0) propagation through HashMap::values().sum::<f64>() rendered as "-US$ 0,00" by Swift pt-BR NumberFormatter'
+    fix_site: 'crates/torven-core/src/uniffi_exports.rs:846, 852, 859, 866 — defensive `+ 0.0` in 3 propagation sites (the IEEE 754 idiom for "collapse -0.0 to +0.0 without affecting any other value")'
+    test: 'build_status_normalizes_negative_zero — uses `to_bits()` bitwise comparison; asserts all 4 fields (total_spent_usd, total_percent_used, per_vendor[0].spent_usd, per_vendor[0].percent_used)'
+
+  - id: FMT-001
+    title: 'IntegerFormatStyle<Int>() without thousand separators on Requests Y-axis + hover card'
+    severity: low (carry-forward from Story 4.5 gate)
+    cause: 'Story 4.5 chose `IntegerFormatStyle<Int>()` without `.grouping(.automatic)` — request counts ≥1000 render cramped without locale-aware separators ("1234" instead of "1.234" pt-BR / "1,234" en-US)'
+    fix_site: 'apple/Torven/MainWindow/Charts/StackedAreaChart.swift (Y-axis Requests format + hover card) + apple/Torven/MainWindow/Charts/MiniVendorChart.swift (header total) — `.grouping(.automatic)` applied consistently'
+    test: 'visual via #Preview blocks; no XCTest target available'
+
+  - id: LAY-001
+    title: 'Apply button truncated when DateRangePicker Custom mode active'
+    severity: low (UX, only visible at default 900pt window with Custom mode)
+    cause: 'Story 4.5 tightened ViewMode Picker 220→180pt but missed DateRangePicker segmented Picker (still 220pt). Top-bar layout total: 220 (DRP picker) + ~100 (DatePicker start) + 15 (→) + ~100 (DatePicker end) + 60 (Apply) + 180 (ViewMode) + 160 (ChartMetric) + 4×spacing = ~870pt, overflowing the 868pt available (window 900pt - 32pt padding). Apply button pushed out of bounds.'
+    fix_site: 'apple/Torven/MainWindow/DateRangePicker.swift:121 — `.frame(width: 180)` (was 220). Frees ~40pt headroom. Inline rationale comment documents the math + the consistency with ViewMode Picker width.'
+    test: 'visual smoke — Lorenzo bench (deferred per project precedent)'
+
+files_reviewed:
+  modified:
+    - crates/torven-core/src/uniffi_exports.rs (+54 LOC — 3 `+ 0.0` sites with inline rationale + 1 new unit test build_status_normalizes_negative_zero)
+    - apple/Torven/MainWindow/Charts/StackedAreaChart.swift (+14 LOC — Y-axis + hover card grouping(.automatic))
+    - apple/Torven/MainWindow/Charts/MiniVendorChart.swift (+8 LOC — header total grouping(.automatic) for Requests metric)
+    - apple/Torven/MainWindow/DateRangePicker.swift (+8 LOC — frame 220→180 + 5-line inline rationale)
+
+build_gate:
+  cargo_test_workspace: 'green (+1 test build_status_normalizes_negative_zero; total uniffi_exports::tests now 5/5)'
+  cargo_clippy: 'green (--workspace --all-targets -- -D warnings clean)'
+  cargo_fmt: 'green (--all -- --check clean)'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED independently re-verified on branch HEAD 16492fd)'
+  coderabbit: 'green (dev pre-commit `--prompt-only -t uncommitted` returned 0 findings on 4 changed files; 1 MINOR on untracked docs/cases-drafts/ unrelated)'
+
+regression_audit:
+  wave_4_contracts:
+    - 'Story 4.2 DateRangePicker behavior preserved (only frame width changed, no logic delta)'
+    - 'Story 4.3 StackedAreaChart preserved (Cost path unchanged, only Requests Y-axis format augmented)'
+    - 'Story 4.4 PerVendorGrid + MiniVendorChart preserved (only Requests total formatting augmented)'
+    - 'Story 4.5 ChartMetric enum unchanged'
+    - 'Story 4.6 BudgetStatus FFI surface unchanged — fix is internal to build_status, no UDL or Swift type changes'
+  ffi_surface: 'no changes to torven_core.udl or generated Swift bindings'
+  no_breaking_changes: 'all callers (existing + new) compile unchanged'
+
+handoff:
+  next_agent: '@devops (via @aiox-master orchestration)'
+  next_command: '*push'
+  condition: 'QA gate PASS → push to remote, open PR, await CI, squash-merge'
+
+next_step: '@devops push wave-4-polish-001 PR'
