@@ -1,0 +1,442 @@
+schema: 1
+storyId: 4.1.main-window-shell
+story: '4.1'
+gate: PASS
+verdict: PASS
+score: 9.5
+gateDate: '2026-06-05'
+commit_reviewed: 'c904daf on feat/wave-4-story-4-1-main-window-shell'
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-05T15:00:00Z'
+checked_at: '2026-06-05T15:00:00Z'
+status_reason: >-
+  Wave 4 sub-wave Shell opener delivers the NSWindowController singleton
+  + dual-invocation pattern (PopoverView footer button + ⌘1 global hotkey
+  via KeyboardShortcuts SPM 2.4.0) cleanly. All 10 ACs verified at code
+  level. Singleton pattern is textbook (private init, static let shared,
+  NSWindowDelegate conformance, windowShouldClose → orderOut(nil) + return
+  false, isReleasedWhenClosed=false belt-and-suspenders, NSHostingView
+  wrapping placeholder MainWindowView). Hotkey registration is forward-
+  defensive: configureGlobalHotkeys() applies the ⌘1 default only when
+  TorvenMainWindowDefaultShortcutApplied UserDefault is absent, so a
+  future Settings recorder (Wave 5+) will not be overwritten on relaunch.
+  NSApp.activate(ignoringOtherApps: true) before makeKeyAndOrderFront(nil)
+  is exactly the LSUIElement contract for bringing a window to focus from
+  background. Reduce Motion satisfied naturally — show() uses only native
+  AppKit paths without custom animation, so accessibilityDisplayShouldReduceMotion
+  is honored by the system. Wave 3 popover regression check passes:
+  ForEach(coreBridge.vendors) rendering and frame(width: 380, height: 540)
+  are untouched; the new HStack footer sits below Spacer(minLength: 0)
+  consuming roughly 28-32pt — fits within the 540pt envelope but tight
+  enough to warrant the visual confirmation captured in issue VIS-001.
+  Build gate green per dev evidence (cargo test --workspace 29/29 with
+  Rust untouched in this story, xcodebuild BUILD SUCCEEDED with
+  KeyboardShortcuts 2.4.0 SPM resolved, xcodegen regenerated cleanly).
+  Score 9.5 vs 10 reflects (1) runtime smoke deferred to Lorenzo's bench
+  for the Accessibility permission prompt + ⌘W hide + ⌘1 background flow
+  (same calibration as Story 3.2 AC-5 / Story 3.3 AC-9), and (2) the
+  tight-but-acceptable popover footer fit noted as a low-severity visual
+  follow-up.
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: n/a
+  security: pass
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      MainWindowController.swift (70 LOC) is idiomatic AppKit: final
+      class : NSWindowController, NSWindowDelegate, private init() with
+      static let shared, NSWindow constructed with the exact styleMask
+      [.titled, .closable, .miniaturizable, .resizable], backing:
+      .buffered, defer: false, title "Torven — History", initial frame
+      NSRect 0,0,900,600 centered after init via window.center(),
+      setFrameAutosaveName("TorvenMainWindow") for system-managed
+      position/size persistence, contentView wraps NSHostingView(rootView:
+      MainWindowView()), isReleasedWhenClosed = false. show() activates
+      with ignoringOtherApps: true (LSUIElement contract), calls
+      showWindow(nil) then makeKeyAndOrderFront(nil) — idempotent because
+      AppKit no-ops on already-keyed windows. windowShouldClose returns
+      false and calls orderOut(nil) so the singleton retains its
+      NSWindow and SwiftUI host between open/close cycles. required
+      init?(coder:) is marked @available(*, unavailable) with a fatalError
+      stub, the correct pattern for code-only NSWindowControllers.
+      MainWindowView.swift is a 32-LOC placeholder Text("History — Wave 4")
+      with .font(.title2).foregroundStyle(.secondary).frame(maxWidth:
+      .infinity, maxHeight: .infinity) + #Preview at 900×600 — minimal
+      surface area, no @EnvironmentObject so SwiftUI previews compile
+      without bridge mocks (matches the story's risk-table mitigation).
+      TorvenApp.swift adds import KeyboardShortcuts, the
+      extension KeyboardShortcuts.Name.openMainWindow = Self("openMainWindow")
+      contract, and a private static configureGlobalHotkeys() called
+      from init(). The function is read-once-then-handler: guards on
+      TorvenMainWindowDefaultShortcutApplied (UserDefaults), applies the
+      ⌘1 default exactly once, then registers
+      KeyboardShortcuts.onKeyUp(for: .openMainWindow) {
+      MainWindowController.shared.show() }. PopoverView footer is
+      composed minimally: HStack { Spacer(); Button("Show History…") {
+      MainWindowController.shared.show() }.buttonStyle(.plain)
+      .font(.footnote).foregroundColor(.secondary); Spacer() }
+      .padding(.vertical, 8) — sits below Spacer(minLength: 0) within
+      the existing .frame(width: 380, height: 540). No retain cycles
+      possible (singleton holds NSWindow, NSWindow holds delegate via
+      weak reference per AppKit contract).
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      Story 4.1 is a Swift/AppKit shell with zero Rust changes, so
+      cargo test --workspace serves only as a regression check
+      (dev reports 29/29 green, Rust untouched). Swift-side has no
+      XCTest target in apple/project.yml (testTargets: [] confirmed
+      lines 45-47) by design — Wave 4 ADR §4 keeps Swift covered by
+      compile-time + smoke validation, with the heavy logic kept in
+      Rust where XCTest equivalents (cargo test) live. The four
+      Swift entities under test (singleton idempotency,
+      windowShouldClose hide-not-close, hotkey default-once guard,
+      activate+order-front sequence) are deterministic enough that
+      code review + runtime smoke (deferred to Lorenzo) is the
+      project's accepted coverage envelope at this layer.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: '10/10 ACs verified — see acs_breakdown.'
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      PopoverView.swift diff (git diff main...HEAD --
+      apple/Torven/Popover/PopoverView.swift) shows ONLY the additive
+      footer HStack inserted after Spacer(minLength: 0) — header
+      Text("Torven"), VStack ForEach(coreBridge.vendors), padding(.horizontal,
+      16), and .frame(width: 380, height: 540) are untouched. VendorCard.swift
+      and AccountPicker.swift (Story 3.3 deliverables) are NOT in the
+      file change list. Footer adds approximately 28-32pt of vertical
+      consumption inside the fixed 540pt frame (8pt top padding +
+      footnote button ~20pt + 8pt bottom padding = ~36pt). With Wave 3
+      empirical baseline of all 5 cards fitting cleanly (header ~52pt +
+      5 cards × ~80pt + 4 × 8pt gaps = ~484pt), residual margin drops
+      from ~56pt to ~24pt — within envelope but tight. Documented as
+      VIS-001 low-severity follow-up. cargo test --workspace 29/29 per
+      dev Change Log (Rust untouched); xcodebuild Debug BUILD SUCCEEDED.
+
+  - name: performance
+    verdict: N/A
+    notes: >-
+      Hotkey path is event-driven via CGEventTap (KeyboardShortcuts'
+      backing) — O(1) hot path with no allocations on key event. show()
+      is two AppKit calls + activate, all native O(1). NSWindow + NSHostingView
+      construction is lazy-singleton (paid once on first show()). No NFR
+      with a numeric target applies. KeyboardShortcuts SPM dep adds
+      ~50KB to bundle per the story risk-table — accepted under D5.
+
+  - name: security
+    verdict: PASS
+    notes: >-
+      No new attack surface introduced — NSWindowController + KeyboardShortcuts
+      both stay within sandboxable AppKit surfaces. Default Accessibility
+      permission prompt on first ⌘1 use is the documented macOS contract
+      for global hotkeys (event tap requires Accessibility entitlement on
+      macOS 13+). Risk-table mitigation is correct: if user denies,
+      KeyboardShortcuts silently no-ops the handler, app continues to
+      function via the popover button (graceful degradation). No secrets,
+      API keys, or FFI surfaces touched.
+
+  - name: documentation
+    verdict: PASS
+    notes: >-
+      Story file is exhaustive: 10 ACs with implementation-grade detail
+      (autosaveName, makeKeyAndOrderFront, windowShouldClose contract
+      spelled out), file list created/modified accurate, Change Log
+      captures @sm draft → @po GO → @dev start → @dev complete
+      lifecycle. Dev Notes documents the four key decisions explicitly
+      (init vs DelegateAdaptor deferred to Story 1.15 / ADR-10,
+      default-once UserDefaults guard rationale, isReleasedWhenClosed
+      defensive comment, NSApp.activate for LSUIElement). MainWindowController.swift
+      and MainWindowView.swift carry header comments cross-referencing
+      Stories 4.2-4.6 (the chart fillers), WAVE4-D1 + WAVE4-D5 decisions,
+      and the lifecycle contract. PopoverView.swift header updated to
+      reference Story 4.1 alongside the Wave 2/3 lineage. project.yml
+      packages: block comments WAVE4-D5 + the macOS 13+ compatibility
+      rationale.
+
+acs_verified: '10/10'
+acs_breakdown:
+  AC-1: >-
+    PASS — apple/project.yml lines 18-24 declare packages.KeyboardShortcuts
+    with url https://github.com/sindresorhus/KeyboardShortcuts and
+    from: 2.0.0. Target Torven dependencies list (line 39) adds
+    `- package: KeyboardShortcuts`. Dev Change Log records SPM resolved
+    KeyboardShortcuts 2.4.0 (compatible with from: 2.0.0 semver range)
+    + linked + codesigned during xcodebuild Debug. macOS 13+ deployment
+    target preserved (project.yml options.deploymentTarget.macOS "13.0").
+
+  AC-2: >-
+    PASS — apple/Torven/MainWindow/MainWindowController.swift exact match
+    to AC: line 26 `final class MainWindowController: NSWindowController,
+    NSWindowDelegate`, line 27 `static let shared = MainWindowController()`,
+    lines 29-46 private init() with NSRect(0, 0, 900, 600), styleMask
+    [.titled, .closable, .miniaturizable, .resizable], title "Torven —
+    History", setFrameAutosaveName("TorvenMainWindow") line 39,
+    contentView = NSHostingView(rootView: MainWindowView()) line 40,
+    super.init(window:) + window.delegate = self lines 44-45. Method
+    show() lines 55-60 calls NSApp.activate(ignoringOtherApps: true)
+    then showWindow(nil) then makeKeyAndOrderFront(nil) — matches AC
+    requirement. windowShouldClose lines 66-69 returns false and calls
+    sender.orderOut(nil) — exact contract specified.
+
+  AC-3: >-
+    PASS — apple/Torven/MainWindow/MainWindowView.swift struct MainWindowView:
+    View (line 20) with body Text("History — Wave 4") (line 22),
+    .font(.title2).foregroundStyle(.secondary).frame(maxWidth: .infinity,
+    maxHeight: .infinity) (lines 23-25). Header comment lines 1-16
+    cross-references Stories 4.2-4.6 with the chart filler roadmap.
+    #Preview lines 29-32 wraps MainWindowView with .frame(width: 900,
+    height: 600).
+
+  AC-4: >-
+    PASS — apple/Torven/Popover/PopoverView.swift lines 42-53 add the
+    HStack footer: Spacer + Button("Show History…") {
+    MainWindowController.shared.show() }
+    .buttonStyle(.plain).font(.footnote).foregroundColor(.secondary)
+    + Spacer, wrapped in .padding(.vertical, 8). Frame .frame(width:
+    380, height: 540) (line 55) preserved verbatim from Wave 3 baseline.
+    Button sits below Spacer(minLength: 0) line 41 so it pushes to the
+    bottom edge.
+
+  AC-5: >-
+    PASS — apple/Torven/TorvenApp.swift line 17 `import KeyboardShortcuts`,
+    lines 20-25 `extension KeyboardShortcuts.Name { static let openMainWindow
+    = Self("openMainWindow") }`, line 35 `init() { Self.configureGlobalHotkeys() }`,
+    lines 52-68 configureGlobalHotkeys() applies the default
+    KeyboardShortcuts.Shortcut(.one, modifiers: .command) when
+    TorvenMainWindowDefaultShortcutApplied UserDefault is absent
+    (default-once guard), then registers
+    KeyboardShortcuts.onKeyUp(for: .openMainWindow) {
+    MainWindowController.shared.show() } unconditionally.
+
+  AC-6: >-
+    PASS (code-level) — show() line 57 calls NSApp.activate(ignoringOtherApps:
+    true) before makeKeyAndOrderFront, which is the documented contract
+    for LSUIElement apps to surface a window from background. Runtime
+    smoke (background ⌘1 → window foregrounds + Torven app activates)
+    deferred to Lorenzo's bench per project precedent.
+
+  AC-7: >-
+    PASS — Singleton guarantees a single NSWindow instance for the app
+    lifetime. show() invocations are no-ops on already-front, already-key
+    NSWindow per AppKit semantics (showWindow + makeKeyAndOrderFront
+    early-return when no-op). Multiple clicks on the popover button or
+    repeated ⌘1 presses cannot create duplicate windows by construction.
+
+  AC-8: >-
+    PASS — windowShouldClose returns false + sender.orderOut(nil) hides
+    the window without deallocating; isReleasedWhenClosed = false adds
+    a defensive belt-and-suspenders against any AppKit code path that
+    might trigger a release. Reopen via show() finds the existing
+    NSWindow with its system-managed frame intact (setFrameAutosaveName
+    persistence) and brings it back to front. Content tree (NSHostingView
+    + MainWindowView) survives because the NSWindow retains its
+    contentView.
+
+  AC-9: >-
+    PASS — show() uses only native AppKit paths (NSApp.activate +
+    showWindow + makeKeyAndOrderFront) with zero custom animation, so
+    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion is honored
+    by the system automatically. Dev Notes documents the rationale
+    ("macOS native window sem animação custom satisfaz AC naturalmente").
+
+  AC-10: >-
+    PASS — Dev Change Log records `make build-core` produced the
+    xcframework (arm64-only single-arch dev build per Wave 1 D-2
+    decision), `xcodegen generate` regenerated Torven.xcodeproj with
+    the SPM ref, and `xcodebuild -project Torven.xcodeproj -scheme
+    Torven -configuration Debug build` returned BUILD SUCCEEDED with
+    KeyboardShortcuts 2.4.0 checked out, linked, and codesigned. cargo
+    test --workspace 29/29 green confirms Rust crates untouched by
+    this story.
+
+decisions_review:
+  - decision: 'init() vs @NSApplicationDelegateAdaptor for hotkey wiring'
+    verdict: JUSTIFIED
+    rationale: >-
+      KeyboardShortcuts manages its own CGEventTap lifecycle, so it
+      does not require AppDelegate hooks for setup or teardown.
+      Wiring configureGlobalHotkeys() from TorvenApp.init() is
+      sufficient at this stage. The future migration to
+      @NSApplicationDelegateAdaptor (planned in Story 1.15 for the
+      Keychain-shutdown flow per ADR-10) is documented in the
+      TorvenApp.swift header comment. No risk introduced by the
+      current choice — the handler is a single registration call
+      that survives app lifecycle.
+
+  - decision: 'UserDefaults default-once guard for ⌘1'
+    verdict: JUSTIFIED (forward-defensive)
+    rationale: >-
+      KeyboardShortcuts persists user-modified shortcuts via its own
+      internal UserDefaults keys. If configureGlobalHotkeys() applied
+      the default ⌘1 on every launch, it would silently overwrite a
+      user-recorded choice the moment Wave 5+ adds the Settings
+      shortcut recorder. The TorvenMainWindowDefaultShortcutApplied
+      flag scopes the default exclusively to first launch. Exact
+      pattern recommended by KeyboardShortcuts' own README.
+
+  - decision: 'isReleasedWhenClosed = false explicit set'
+    verdict: JUSTIFIED (defensive)
+    rationale: >-
+      NSWindows created programmatically (via NSWindow init) have
+      isReleasedWhenClosed defaulting to true historically. Combined
+      with windowShouldClose returning false + orderOut, the explicit
+      = false is belt-and-suspenders against any AppKit code path
+      that might still trigger the release. Minimal cost (single
+      line), high defense for the singleton invariant.
+
+  - decision: 'HStack footer (Spacer + Button + Spacer) for centering'
+    verdict: JUSTIFIED
+    rationale: >-
+      Centers the Button("Show History…") horizontally within the 380pt
+      popover width. Alternative would be Button(...).frame(maxWidth:
+      .infinity) — equivalent visually, slightly less explicit about
+      intent. Current HStack-Spacer-Button-Spacer is idiomatic SwiftUI
+      for "center a single child". Not gate-blocking. Could be reduced
+      to a single Spacer modifier in a future refactor if the footer
+      grows to include left/right elements.
+
+smoke_ux_recommendation:
+  policy: 'Code-level PASS; runtime smoke = Lorenzo bench (NOT gate-blocking)'
+  rationale: >-
+    Wave 2/3 precedent (Story 3.2 AC-5 + Story 3.3 AC-9) established
+    that runtime UI smoke runs against Lorenzo's real macOS environment
+    after QA gate, with textual confirmation in the Change Log being
+    the audit-trail equivalent of screenshots. Same calibration applies
+    here. The four smoke checkpoints to verify outside this gate are:
+      1. Accessibility permission prompt on first ⌘1 press (expected
+         per risk-table Medium; graceful degradation via popover
+         button if denied)
+      2. ⌘W on the Main Window hides without deallocating (reopen via
+         button/hotkey shows the same window state)
+      3. ⌘1 with Torven in background brings the Main Window to focus
+         + activates the app
+      4. Idempotência visual — multiple button clicks / ⌘1 presses
+         do not stack duplicate windows
+    Code-level inspection confirms the logic for all four is correct.
+    Runtime verification can post-merge follow under the project's
+    established cadence.
+
+wave3_regression:
+  popover_frame: 'preserved (.frame(width: 380, height: 540) line 55)'
+  vendor_cards_render: 'preserved (ForEach(coreBridge.vendors) lines 35-39 untouched)'
+  header_layout: 'preserved (Text("Torven") header lines 27-32 untouched)'
+  vendor_card_file: 'NOT modified by this story'
+  account_picker_file: 'NOT modified by this story (Story 3.3 sheet path intact)'
+  footer_vertical_consumption: '~28-32pt added inside 540pt frame; residual margin drops from ~56pt to ~24pt after the 5 vendor cards + header — fits but tight (see VIS-001)'
+
+build_gate:
+  cargo_test_workspace: 'green (29/29 per dev evidence — Rust crates untouched by this Swift-only story)'
+  cargo_clippy: 'n/a for this story (no Rust changes)'
+  cargo_fmt: 'n/a for this story (no Rust changes)'
+  xcodegen_generate: 'green (.xcodeproj regenerated with KeyboardShortcuts SPM ref)'
+  xcodebuild_debug: 'green (BUILD SUCCEEDED per dev Change Log — KeyboardShortcuts 2.4.0 checked out + linked + codesigned)'
+  coderabbit: 'dev reports 0 CRITICAL / 0 HIGH (1 minor applied) via --prompt-only mode'
+
+files_reviewed:
+  created:
+    - apple/Torven/MainWindow/MainWindowController.swift
+    - apple/Torven/MainWindow/MainWindowView.swift
+  modified:
+    - apple/Torven/Popover/PopoverView.swift (HStack footer with "Show History…" button, additive only)
+    - apple/Torven/TorvenApp.swift (KeyboardShortcuts import + .openMainWindow extension + configureGlobalHotkeys() in init)
+    - apple/project.yml (packages.KeyboardShortcuts from: 2.0.0 + target dependency)
+  regenerated:
+    - apple/Torven.xcodeproj/project.pbxproj (via xcodegen generate — gitignored)
+  not_modified_by_design:
+    - apple/Torven/Popover/VendorCard.swift (Wave 3 contract preserved)
+    - apple/Torven/Popover/AccountPicker.swift (Wave 3 contract preserved)
+    - apple/Torven/ViewModels/CoreBridge.swift (no bridge changes required)
+    - crates/torven-core/* (zero Rust changes)
+
+issues:
+  - id: VIS-001
+    severity: low
+    category: code
+    description: >-
+      PopoverView footer (Show History… button + 16pt vertical padding)
+      consumes approximately 28-32pt inside the fixed 380×540 popover
+      frame. With Wave 3 having 5 vendor cards + header occupying
+      ~484pt and the previous Spacer(minLength: 0) absorbing ~56pt,
+      the new residual margin is ~24pt. Mathematically the cards still
+      fit, but the cushion is tight enough that any future card
+      height bump (e.g. multi-line error states from Wave 7 AR-8)
+      could push the last card into clipped territory.
+    suggested_action: >-
+      Accept for now. When Wave 7 AR-8 introduces dynamic card content
+      (active-account label, error states), revisit the popover frame
+      height (consider 380×580 or making it intrinsic via removing
+      .frame(height: 540) and letting SwiftUI size the popover). Track
+      as Wave 7 follow-up.
+
+  - id: SMK-001
+    severity: low
+    category: testing
+    description: >-
+      Runtime smoke for Accessibility permission prompt, ⌘W hide
+      behavior, ⌘1 background activation, and visual idempotency is
+      deferred to Lorenzo's bench (project pattern, matches Story 3.2
+      AC-5 / Story 3.3 AC-9 calibration). Code-level inspection
+      confirms the logic for all four is correct, but real-macOS
+      validation has not yet been recorded textually.
+    suggested_action: >-
+      After @devops *push, run the .app from DerivedData (or built
+      bundle) and append a 4-line smoke confirmation to the Story
+      4.1 Change Log: (1) prompt seen + permission granted, (2) ⌘W
+      hides without window count increasing, (3) ⌘1 brings window
+      to front from another app's focus, (4) repeated button clicks
+      show same window. Equivalent to the textual-audit-trail
+      pattern already used in Wave 3.
+
+  - id: ARC-001
+    severity: low
+    category: architecture
+    description: >-
+      Hotkey wiring lives in TorvenApp.init() via a static method.
+      Once Story 1.15 adds the @NSApplicationDelegateAdaptor for the
+      Keychain-shutdown wiring (per ADR-10), configureGlobalHotkeys()
+      will logically migrate into applicationDidFinishLaunching for
+      consistency with other lifecycle-bound setup.
+    suggested_action: >-
+      Defer to Story 1.15. No action needed in Wave 4. Header comment
+      in TorvenApp.swift already flags this migration path.
+
+waiver:
+  active: false
+
+recommendations:
+  - >-
+    Accept the gate as PASS and proceed to @devops *push. The Wave 4
+    Shell sub-wave (Story 4.1) closes cleanly; the chart-filler
+    sub-wave (Stories 4.2-4.6) can now build on this NSWindow shell
+    without revisiting the invocation contract.
+  - >-
+    When Story 4.2 (Date Range Picker) lands, the QA gate should
+    verify that MainWindowView no longer renders the "History — Wave
+    4" placeholder Text and that the NSHostingView swap survives
+    show()/orderOut cycles cleanly.
+  - >-
+    Bake the SMK-001 textual-smoke pattern into the Wave 4 story
+    template — each story that touches user-visible behavior should
+    include a "Runtime smoke confirmation" subsection in Change Log
+    after Lorenzo's bench pass.
+
+next_step: '@devops *push (Story 4.1 PR — Wave 4 Shell sub-wave merge candidate)'
+
+handoff:
+  next_agent: '@devops'
+  next_command: '*push'
+  condition: 'QA gate verdict is PASS — Status: InReview → Done'

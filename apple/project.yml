@@ -15,6 +15,13 @@ settings:
     # team ID.
     DEVELOPMENT_TEAM: "${DEVELOPMENT_TEAM}"
     CODE_SIGN_STYLE: Automatic
+packages:
+  # Story 4.1 (Wave 4): global hotkey ⌘1 to open the Main Window. Decision
+  # WAVE4-D5 (cravada) — sindresorhus/KeyboardShortcuts over Carbon/NSEvent
+  # custom (avoids ~200 LOC of boilerplate). Compatible with macOS 13+ target.
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 2.0.0
 targets:
   Torven:
     type: application
@@ -29,6 +36,7 @@ targets:
     dependencies:
       - framework: Frameworks/TorvenCore.xcframework
         embed: false
+      - package: KeyboardShortcuts
     info:
       path: Torven/Info.plist
       properties:
