@@ -27,7 +27,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     static let shared = MainWindowController()
 
     private init() {
-        let initialFrame = NSRect(x: 0, y: 0, width: 900, height: 600)
+        let initialFrame = NSRect(x: 0, y: 0, width: 1040, height: 600)
         let window = NSWindow(
             contentRect: initialFrame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -35,7 +35,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = "Torven — History"
+        // LAY-001 v2 (Wave 4 polish): top bar in Custom mode needs ~926pt
+        // (Period 180 + DatePicker 110 + arrow 15 + DatePicker 110 + Apply 55
+        //  + ViewMode 180 + Metric 160 + paddings/spacings). The original
+        // 900pt default truncated the Apply button. Bumping default to 1040pt
+        // and pinning minSize so neither autosave restoration nor user-resize
+        // can drop below the Custom-mode threshold.
+        window.minSize = NSSize(width: 1040, height: 480)
         // System persists position/size across launches keyed by this name.
+        // minSize is enforced *before* setFrameAutosaveName so any restored
+        // frame narrower than 1040pt is clamped up on relaunch.
         window.setFrameAutosaveName("TorvenMainWindow")
         window.contentView = NSHostingView(rootView: MainWindowView())
         window.isReleasedWhenClosed = false
