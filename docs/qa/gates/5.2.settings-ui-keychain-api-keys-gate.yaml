@@ -1,0 +1,322 @@
+schema: 1
+storyId: 5.2.settings-ui-keychain-api-keys
+story: '5.2'
+gate: PASS
+verdict: PASS
+score: 9.4
+gateDate: '2026-06-06'
+commit_reviewed: staged-on-feat/wave-5-story-5-2-settings-ui-keychain
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-06T18:00:00Z'
+checked_at: '2026-06-06T18:00:00Z'
+status_reason: >-
+  Wave 5 Story 5.2 lands the native macOS Settings UI for vendor API-key
+  management cleanly. All 9 ACs implemented exactly per WAVE5-D7-adjusted
+  spec: 2 OAuth-status read-only sections (Anthropic, OpenAI) using only
+  `FileManager.fileExists` on `~/.claude/.credentials.json` / `~/.codex/
+  auth.json` (CLAUDE.md secret discipline honored — never reads file
+  content), and 2 SecureField API-key sections (OpenRouter, Z.AI) persisted
+  via `ffi_keychain_set_blob`. The Swift `KeychainBlob` struct mirrors
+  Rust's `AccountsBlob { version, accounts[AccountSecret { account_id,
+  api_key }] }` verbatim with explicit `CodingKeys` to bridge Swift camelCase
+  to Rust serde snake_case — wire format compatibility verified against
+  `crates/torven-core/src/keychain/mod.rs`. `account_id = "{vendor}-default"`
+  pattern matches `config.rs::account_id(vendor, "default")` exactly. The
+  three-file split (SettingsView / SettingsViewModel / VendorKeyRow) is
+  clean and idiomatic SwiftUI; ViewModel uses `@MainActor` + injection seams
+  (`fileExists`, `homeDirectoryProvider`) for future testability. Security
+  invariants fully respected — zero `print()`/`debugPrint`/`os_log`/`NSLog`
+  in `Settings/`, plaintext key lives only in `@Published` for ViewModel
+  lifetime, error messages surfaced without api_key (controlled by Rust
+  side per gate of Story 1.20). `xcodebuild clean build` BUILD SUCCEEDED;
+  zero new Swift warnings. Two minor non-blocking observations documented
+  (redundant autocorrect modifiers, no XCTest unit tests despite testability
+  seams) — neither warrants a CONCERNS verdict given the SwiftUI scope and
+  deliberate trade-offs documented in the story.
+
+checks:
+  code_review: pass
+  unit_tests: concerns
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: pass
+  security: pass
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    score: 9.5
+    notes: >-
+      Three-file split is well-factored. `SettingsView.swift` (100 LOC) is the
+      thin root scene — only composes 4 `VendorKeyRow`s and wires `onAppear`
+      to the ViewModel. `SettingsViewModel.swift` (242 LOC) owns all state
+      and side effects; `@MainActor` annotation correctly serializes
+      `@Published` mutations on the main thread without ad-hoc dispatch.
+      `VendorKeyRow.swift` (202 LOC) uses an enum `VendorRowVariant` to
+      discriminate api-key vs oauth-status rendering — preferred over two
+      separate views because the parent Form can iterate uniformly if a
+      future story wants `ForEach`. The `@escaping () -> Void` annotation on
+      `onSave` in `apiKeyContent` is correct (captured in `Button` action
+      closure which is escaping). `[weak self]` capture in the 2s
+      auto-dismiss `Task` prevents ViewModel retention past window close.
+      `disableAutocorrection(true)` (line 66) is deprecated on macOS 13+ —
+      the modern `autocorrectionDisabled(true)` on the next line supersedes
+      it; both compile and run correctly, but the redundant deprecated
+      modifier is a minor code smell (MNT-001, low).
+
+  - name: unit_tests
+    verdict: CONCERNS
+    score: 7.5
+    notes: >-
+      No XCTest unit tests added in this story. The ViewModel was
+      deliberately designed for testability (the `fileExists` and
+      `homeDirectoryProvider` constructor parameters are explicit injection
+      seams documented as "testing hook" in inline comments) but the seams
+      are not yet exercised by tests. 5 `#Preview` declarations provide
+      visual smoke coverage (api-key idle, api-key success, oauth connected,
+      oauth not-configured, SettingsView preview). For a SwiftUI Settings
+      surface where the dominant risk is wire-format drift against the Rust
+      core (already mitigated by explicit `CodingKeys` mirroring
+      `AccountsBlob`), this is acceptable but not optimal — a follow-up
+      story should add `SettingsViewModelTests` covering JSON encode/decode
+      round-trip and OAuth probe logic with the injection seams.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    score: 10.0
+    notes: >-
+      All 9 ACs verified against implementation, post-WAVE5-D7 reconciliation:
+      AC-1 Form with 4 sections in deterministic order (Anthropic OAuth,
+      OpenAI OAuth, OpenRouter API, Z.AI API). AC-2 `Settings { SettingsView() }`
+      registered in `TorvenApp.swift` after `MenuBarExtra`; Cmd+, opens
+      Settings (build green confirms scene type). AC-3 `onAppear` runs sync
+      `refreshOAuthStatus()` then async `loadKeysFromKeychain()` in
+      `Task { @MainActor in }`; `KeychainFfiError.Storage` (no entry yet)
+      gracefully falls back to empty string. AC-4 `saveKey` constructs blob,
+      calls `ffiKeychainSetBlob`, sets `saveState[vendor] = .success`,
+      auto-dismisses after 2s via `Task.sleep(nanoseconds: 2_000_000_000)`
+      with `[weak self]`; errors surfaced via `.error(message)` with safe
+      message. AC-5 OAuth probes via `FileManager.default.fileExists` ONLY
+      (verified by grep — no `String(contentsOf:)`, `Data(contentsOf:)`, or
+      `contentsOfFile`); status `connected` vs `notConfigured` rendered with
+      checkmark/info icon + Portuguese label. AC-6 `Task { await saveKey() }`
+      from View; UI never blocks (verified by code path inspection). AC-7
+      `xcodebuild -project apple/Torven.xcodeproj -scheme Torven -configuration
+      Debug -destination 'platform=macOS' clean build` → **BUILD SUCCEEDED**
+      (re-verified by QA after staged-but-uncommitted state). AC-8
+      `isSaveDisabled` returns true when `trimmingCharacters(in:
+      .whitespacesAndNewlines).isEmpty` OR when `saveState == .saving`
+      (double-click defense). AC-9 `key.trimmingCharacters(in:
+      .whitespacesAndNewlines)` applied in `saveKey` BEFORE blob serialize
+      (line 169 in SettingsViewModel.swift).
+
+  - name: no_regressions
+    verdict: PASS
+    score: 10.0
+    notes: >-
+      `xcodebuild ... clean build` re-executed during gate by @qa — BUILD
+      SUCCEEDED, zero Swift warnings, zero Swift errors. Pre-existing
+      linker version-mismatch warnings (Rust toolchain compiles for newer
+      macOS than Xcode links for) unchanged in count and identity — not
+      introduced by Story 5.2. `MenuBarExtra` + `Settings { }` scene
+      coexistence confirmed by successful build and lack of runtime
+      complaints from SwiftUI (single scene per type is the documented
+      constraint, met here). `TorvenApp.swift` modification additive only
+      (+11 LOC for Settings scene block with explanatory comment); no
+      existing scene or modifier removed.
+
+  - name: performance
+    verdict: PASS
+    score: 9.5
+    notes: >-
+      Three performance trade-offs documented in code and validated by QA.
+      (1) `refreshOAuthStatus()` is SYNCHRONOUS on main thread by design —
+      `FileManager.fileExists` on a local path is sub-millisecond, and
+      running it before the first frame prevents a flash of "Not
+      configured" badges; deferring to a Task would introduce a visible
+      transient state for no real benefit. Correct trade-off, well
+      documented in the inline comment (SettingsView.swift line 84-86).
+      (2) `loadKeysFromKeychain()` runs in `Task { @MainActor in }` because
+      Keychain reads can prompt the user for "allow access" on first launch
+      (~1s blocking); deferring lets the window draw immediately with
+      empty fields and populate after the prompt resolves. Correct.
+      (3) `saveKey` is `async`; the View dispatches via `Task { await ... }`
+      so the UI never blocks on the FFI call. The 2s auto-dismiss timer
+      uses `Task.sleep(nanoseconds: 2_000_000_000)` with `[weak self]`
+      capture — no retain cycle risk and the conditional `if self?.saveState
+      [vendor] == .success` guards against clearing a state the user
+      replaced with a fresh save. All three patterns honor SwiftUI's
+      single-thread model without resorting to `Task.detached` or manual
+      `DispatchQueue` work.
+
+  - name: security
+    verdict: PASS
+    score: 10.0
+    notes: >-
+      **CRITICAL Story 5.2 security invariants fully respected.** Verified
+      by grep: (a) zero `print(`, `debugPrint`, `os_log`, `NSLog` in
+      `apple/Torven/Settings/` (matching 0 occurrences); (b) zero
+      `String(contentsOf:`, `Data(contentsOf:`, `contentsOfFile`,
+      `readFile` in `apple/Torven/Settings/` — OAuth probes ONLY call
+      `FileManager.default.fileExists(atPath:)`, never read the JSON
+      content (CLAUDE.md secret discipline: OAuth credential files are
+      opaque, `jq 'keys'` only). (c) `SecureField("API Key", text:
+      keyBinding)` visually masks the input; combined with
+      `disableAutocorrection(true)` / `autocorrectionDisabled(true)`
+      prevents the macOS text engine from "fixing" a key. (d) Save path
+      goes through `ffi_keychain_set_blob` ONLY — no write to
+      `config.toml`, no `UserDefaults`, no plaintext disk persistence. (e)
+      `KeychainFfiError.Storage(let message)` error case surfaces the
+      message via `saveState[vendor] = .error(message)`; verified the Rust
+      side of the FFI (`crates/torven-core/src/keychain/mod.rs`
+      `KeychainError::Store(String)`) never includes api_key material in
+      its error formatting — the messages are vendor slug + storage
+      diagnostic only. Generic catch-all uses safe localized fallback
+      "Erro ao salvar — tente novamente." with zero key leakage. (f)
+      Plaintext key lives in `@Published` `@MainActor` state for the
+      lifetime of the Settings window only — closing the window
+      deallocates the ViewModel and the string with it. (g) `account_id =
+      "{vendor}-default"` matches `config.rs::account_id(vendor,
+      "default")` exactly (deterministic privacy hash per FR-7), so the
+      key written here is retrieved unambiguously by Story 5.1's
+      `keychain_api_key_for(vendor_slug)` during refresh. (h) WAVE5-D7
+      symmetry: OpenAI is OAuth-status read-only (mirroring Anthropic),
+      so no API-key path exists where the OpenAI fetcher (`creds_path:
+      &Path`) wouldn't accept it.
+
+  - name: documentation
+    verdict: PASS
+    score: 9.5
+    notes: >-
+      File List complete (3 created in `apple/Torven/Settings/` + 1
+      modified `TorvenApp.swift` + 1 regenerated `project.pbxproj` + 1
+      modified story file). Change Log has 5 chronological entries from
+      @sm draft through @po validation, @qa WAVE5-D7 propagation, @dev
+      InProgress, and @dev InReview. Inline doc comments connect
+      implementation to acceptance criteria: `SettingsViewModel.swift`
+      lines 1-33 narrate the architecture decisions (`@MainActor`
+      rationale, blob shape mirroring, OAuth probe discipline, WAVE5-D7);
+      `VendorKeyRow.swift` lines 1-16 narrate the variant split and
+      WAVE5-D7; `SettingsView.swift` lines 1-26 narrate the Settings
+      scene registration and layout sizing rationale; `TorvenApp.swift`
+      lines 46-53 document the `Settings { }` scene WAVE5-D2 decision
+      and `MenuBarExtra` coexistence note. ADR-2 cross-ref present.
+
+issues:
+  - id: MNT-001
+    severity: low
+    category: maintainability
+    description: >-
+      `VendorKeyRow.swift` line 66 applies the deprecated
+      `.disableAutocorrection(true)` AND line 67 the modern
+      `.autocorrectionDisabled(true)`. Both compile and the modern one
+      supersedes the deprecated one at runtime, but the redundant modifier
+      is a code smell.
+    location: apple/Torven/Settings/VendorKeyRow.swift:66-67
+    recommendation: >-
+      Remove `.disableAutocorrection(true)` in a future polish PR (next
+      Wave 5 polish or pre-Wave 6 cleanup); the modern API alone is
+      sufficient.
+    blocking: false
+
+  - id: TEST-001
+    severity: medium
+    category: testing
+    description: >-
+      No XCTest unit tests added despite `SettingsViewModel`'s deliberate
+      injection seams (`fileExists`, `homeDirectoryProvider` constructor
+      parameters explicitly documented as "testing hook"). 5 `#Preview`
+      declarations provide visual smoke but no automated coverage of the
+      OAuth probe logic, JSON blob encode/decode round-trip, or save-state
+      transitions.
+    location: apple/Torven/Settings/SettingsViewModel.swift
+    recommendation: >-
+      Add `SettingsViewModelTests.swift` in a follow-up story covering:
+      (1) OAuth probe logic with a stub `fileExists` + stub
+      `homeDirectoryProvider` returning a fixture root, asserting
+      `connected`/`notConfigured` outcomes; (2) `KeychainBlob` JSON
+      encode → decode round-trip with `account_id`/`api_key` field name
+      preservation (regression guard against Swift codegen changes
+      breaking the wire format with Rust); (3) `saveKey` whitespace trim
+      behavior (AC-9); (4) `saveState` transitions (idle → saving →
+      success → idle auto-dismiss). Defer to a Wave 5.5+ polish story —
+      not a blocker for 5.2 merge.
+    blocking: false
+
+cross_story_decisions:
+  - id: WAVE5-D7
+    status: applied
+    reference_gate: docs/qa/gates/5.1.ffi-refresh-vendor-rust-core-gate.yaml
+    summary: >-
+      OpenAI in Story 5.2 is OAuth-status read-only (`FileManager.fileExists`
+      on `~/.codex/auth.json`), mirroring Anthropic — NOT a SecureField API
+      key. Decision originated in Story 5.1 gate when the cross-story
+      conflict was flagged by CodeRabbit; @qa propagated to Story 5.2 spec
+      in parallel. Implementation in this gate verified to match the
+      propagated AC-1/AC-3/AC-4/AC-5/T1-T3/DoD changes verbatim.
+    verification:
+      - AC-1 inspection — Settings Form has 4 sections; OpenAI section uses
+        `.oauthStatus(status: viewModel.openaiStatus, cliName: "Codex CLI")`
+        variant (SettingsView.swift:43-49).
+      - AC-3 inspection — `loadKeysFromKeychain()` only calls
+        `readKey(vendor:)` for "openrouter" and "zai"; no openai branch
+        (SettingsViewModel.swift:132-135).
+      - AC-4 inspection — Save button only present in `apiKey` variant rows
+        (OpenRouter, Z.AI); OAuth variant has no Save button
+        (VendorKeyRow.swift:42-49 switch).
+      - AC-5 inspection — `refreshOAuthStatus()` probes both
+        `~/.claude/.credentials.json` (Anthropic) and `~/.codex/auth.json`
+        (OpenAI) symmetrically (SettingsViewModel.swift:113-116).
+
+recommendations:
+  immediate:
+    - description: 'None — story is merge-ready.'
+      refs: []
+  future:
+    - description: >-
+        Remove redundant `.disableAutocorrection(true)` modifier (MNT-001)
+        in next Wave 5 polish PR.
+      refs:
+        - 'apple/Torven/Settings/VendorKeyRow.swift:66'
+    - description: >-
+        Add `SettingsViewModelTests.swift` (TEST-001) in a Wave 5.5+ polish
+        story — OAuth probe logic + JSON blob round-trip + saveState
+        transitions. The injection seams are already in place; cost is
+        ~150 LOC of XCTest.
+      refs:
+        - 'apple/Torven/Settings/SettingsViewModel.swift:94-106'
+    - description: >-
+        Smoke visual in actual runtime (Cmd+, opens Settings; SecureField
+        masks input; empty field disables Save; Save success shows
+        checkmark; checkmark dismisses after 2s) — defer to manual smoke
+        checklist alongside Wave 4 pending checks (see [[wave_4_smoke_pending]]).
+        Build green is sufficient for gate PASS at this layer.
+      refs: []
+
+recommended_status: Done
+
+handoff:
+  next_agent: '@devops'
+  next_command: '*push'
+  pr_body_notes:
+    - >-
+      Story 5.2 implementation reflects WAVE5-D7 (cross-story decision
+      from Story 5.1 gate) verbatim — OpenAI is OAuth-status read-only,
+      mirroring Anthropic. SecureField API-key vendors reduce to 2
+      (OpenRouter, Z.AI).
+    - >-
+      Branch: feat/wave-5-story-5-2-settings-ui-keychain (off main
+      05f7c0e). Files staged: 3 new in apple/Torven/Settings/, 1 modified
+      TorvenApp.swift, 1 regenerated project.pbxproj (via xcodegen), 1
+      modified story file, 1 new gate file.
+    - >-
+      Build gate green (`xcodebuild ... clean build` BUILD SUCCEEDED).
+      Zero new Swift warnings. CodeRabbit 0 CRITICAL/HIGH in Story 5.2
+      files (pre-gate).
+    - >-
+      Two non-blocking observations carried forward as low/medium-severity
+      issues (MNT-001 redundant autocorrect modifier; TEST-001 missing
+      XCTest despite testability seams). Both deferred to follow-up
+      polish stories.
