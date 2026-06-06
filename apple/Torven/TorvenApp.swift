@@ -43,6 +43,17 @@ struct TorvenApp: App {
             MenuBarLabel(symbol: MenuBarLabel.defaultSymbol)
         }
         .menuBarExtraStyle(.window)
+
+        // Story 5.2 (Wave 5): native macOS Settings scene. The `Settings { }`
+        // scene type wires ⌘, to "Settings…" automatically on macOS 13+. The
+        // window is a singleton owned by SwiftUI; opening it twice focuses
+        // the existing one rather than spawning a duplicate. Decision
+        // WAVE5-D2 (cravada) — chosen over NSPanel for sandboxability and
+        // simpler lifecycle. No coupling to `MenuBarExtra` observed in
+        // testing on macOS 13.0 / 13.5 / 14.x.
+        Settings {
+            SettingsView()
+        }
     }
 
     // MARK: - Hotkey wiring
