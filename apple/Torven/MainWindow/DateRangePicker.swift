@@ -151,6 +151,11 @@ struct DateRangePicker: View {
             applyCustomRange()
         }
         .disabled(isCustomInvalid)
+        // LAY-001 v2: pin the button to its intrinsic width so SwiftUI can't
+        // compress it to "Ap…" when the top bar is tight. Window minSize in
+        // MainWindowController guarantees enough horizontal room; fixedSize is
+        // defence-in-depth so a future top-bar addition can't silently re-clip.
+        .fixedSize()
 
         if isCustomInvalid {
             Text("End date must be after start date")
