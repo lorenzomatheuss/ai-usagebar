@@ -1,0 +1,126 @@
+schema: 1
+story: '5.3'
+gate: PASS
+status_reason: 'All 9 ACs implemented and verified. xcodebuild Debug BUILD SUCCEEDED. CodeRabbit independent re-run on uncommitted: zero findings. Wave 5 end-to-end milestone (Settings → Keychain → Refresh → real API → chart update) is viable.'
+reviewer: 'Quinn'
+updated: '2026-06-06T18:30:00Z'
+score: 9.7
+top_issues: []
+waiver: { active: false }
+
+# ─────────────────────────────────────────────────────────────────────
+# Detailed assessment (advisory — not part of minimal schema)
+# ─────────────────────────────────────────────────────────────────────
+
+assessment:
+  acceptance_criteria:
+    AC-1: { verdict: PASS, evidence: 'MainWindowView.swift:207-227 — Button after ChartMetric Picker with .keyboardShortcut("r", modifiers: .command)' }
+    AC-2: { verdict: PASS, evidence: 'MainWindowView.swift:210-220, 223 — ternary on isRefreshing swaps Image↔ProgressView at fixed 16×16 frame; .disabled(isRefreshing)' }
+    AC-3: { verdict: PASS, evidence: 'ChartViewModel.swift:299-368 — guards re-entry, serial loop over 4 vendors, typed catch exhaustively covers all 5 RefreshFfiError cases (CredentialMissing/NetworkError/ApiError/ParseFailure/StorageError), generic catch for non-RefreshFfi errors' }
+    AC-4: { verdict: PASS, evidence: 'ChartViewModel.swift:365-367 — reload(for:) called with mainViewModel?.dateRange after the refresh loop completes' }
+    AC-5: { verdict: PASS, evidence: 'ChartViewModel.swift:344-348 — errorsByVendor aggregated, alphabetical-sorted vendor slug join, refreshStatusKind = .error (red 0.08 background), 5s scheduled clear' }
+    AC-6: { verdict: PASS, evidence: 'ChartViewModel.swift:349-353 — fires only when missingCount == refreshableVendors.count (all 4 unconfigured), refreshStatusKind = .info (secondary 0.05 background), 8s scheduled clear, points to Cmd+,' }
+    AC-7: { verdict: PASS, evidence: 'MainWindowView.swift:225-226 — accessibilityLabel("Atualizar dados de uso") + accessibilityHint("Busca dados reais das APIs configuradas")' }
+    AC-8: { verdict: PASS, evidence: '@qa re-verified: xcodebuild -project Torven.xcodeproj -scheme Torven -configuration Debug -destination platform=macOS build → ** BUILD SUCCEEDED **' }
+    AC-9: { verdict: PASS, evidence: 'grep keyboardShortcut apple/Torven/**.swift — only MainWindowView.swift:224 claims Cmd+R; no conflict' }
+
+  seven_quality_checks:
+    code_review:
+      verdict: PASS
+      notes: |
+        Idiomatic SwiftUI/Combine. @MainActor inherited from class declaration eliminates actor races.
+        defer { isRefreshing = false } guarantees flag reset on all exit paths.
+        Re-entry guard (line 303) closes the Cmd+R-before-first-state-update race.
+        errorsByVendor as local var (not @Published) avoids stale-state risk between refreshes — design improvement over story spec.
+        Task cancellation pattern in scheduleRefreshMessageClear handles overlapping clears correctly (out-of-order dismissal prevented).
+        RefreshStatusKind enum keeps View free of message-string regex.
+        Banner positioned ABOVE chart (refresh failures) vs errorMessage BELOW (query failures) is semantically clean.
+        Inline documentation is decision-grade — every non-trivial choice is explained.
+
+    unit_tests:
+      verdict: PASS
+      notes: |
+        SwiftUI ViewModel layer — XCTest suite for refresh() state machine deferred to Wave 5.5+ (consistent with Story 5.2 + Wave 4 chart code posture).
+        Not a regression. No existing tests broken.
+
+    acceptance_criteria_summary:
+      verdict: PASS
+      score: '9/9 ACs verified'
+
+    no_regressions:
+      verdict: PASS
+      notes: |
+        Wave 4 chart pipeline (reload(for:), samplesByVendor, selectedVendor, budgetStatus) untouched in behavior.
+        errorMessage band preserved at existing position below chartBody.
+        ChartMetric/ViewMode pickers unchanged.
+        Zero new Swift warnings (linker warnings from Rust toolchain unchanged from main).
+
+    performance:
+      verdict: PASS
+      notes: |
+        Serial dispatch worst case ≈ 40s (4 × 10s HTTP_TIMEOUT in Rust core).
+        Acceptable per WAVE5-D3 manual-only refresh.
+        UI thread non-blocked: Task { await refresh() } from Button; @MainActor ViewModel suspends across await ffiRefreshVendor.
+        Re-entry guard prevents overlapping fetches.
+        Parallel TaskGroup deferred to Wave 5.5 — correct decision, premature optimization avoided.
+
+    security:
+      verdict: PASS
+      notes: |
+        ffi_refresh_vendor (Story 5.1) already credential-validated.
+        refresh() logs only vendor slugs (anthropic, openai, openrouter, zai) — never logs FFI error messages in a way that could leak Authorization headers.
+        Banner surfaces vendor-slug list ("Refresh parcial: openrouter falhou."), not the underlying message.
+        No API keys, tokens, or OAuth blobs reach Swift-side logging.
+
+    documentation:
+      verdict: PASS
+      notes: |
+        Story 5.3 File List complete (2 modified files + story doc).
+        4 Change Log entries (@sm draft, @po Ready, @dev InProgress, @dev InReview).
+        Inline ChartViewModel.swift documentation explains RefreshStatusKind rationale, refreshableVendors hardcoded constant, AC-5>AC-6 priority, Task cancellation semantics.
+
+  coderabbit_independent_rerun:
+    command: 'coderabbit --prompt-only -t uncommitted (executed by @qa on darwin, NOT WSL)'
+    result: 'Review completed: No findings ✔'
+    significance: 'Cleaner than @dev pre-commit run — confirms implementation files are pristine. Zero critical/high/medium/low across both modified Swift files.'
+
+  wave_5_milestone_viability:
+    description: 'Story 5.3 is the Wave 5 closer. Confirm end-to-end milestone is viable post-merge.'
+    paths_verified:
+      path_a_real_fetch:
+        scenario: 'User configures key in Settings (5.2) → clicks Refresh → real API call → chart updates'
+        verdict: VIABLE
+        chain: 'Button.action → Task { refresh() } → ffiRefreshVendor (5.1) → Rust fetcher → SQLite snapshot → reload(for:) → ffi_query_aggregated → chart repaint + budget gauge'
+      path_b_no_keys:
+        scenario: 'No vendor configured → click Refresh → banner AC-6 points to Settings'
+        verdict: VIABLE
+        chain: 'All 4 vendors return RefreshFfiError.CredentialMissing → missingCount == 4 → refreshStatusKind = .info → "Nenhum vendor configurado. Abra Settings (⌘,) ..."'
+      path_c_partial_failure:
+        scenario: 'Some vendors succeed, others fail with NetworkError/ApiError → banner AC-5 lists failures'
+        verdict: VIABLE
+        chain: 'errorsByVendor populated for non-CredentialMissing failures → sorted vendor slug join → refreshStatusKind = .error → "Refresh parcial: X falhou."'
+
+  deductions:
+    - reason: 'No XCTest suite for refresh() state machine'
+      points: -0.2
+      severity: low
+      note: 'Deferred Wave 5.5+ per same posture as Story 5.2 and Wave 4 chart code. Not a regression.'
+    - reason: '40s worst-case latency when all 4 vendors unreachable'
+      points: -0.1
+      severity: low
+      note: 'Acceptable for manual-only refresh (WAVE5-D3). Wave 5.5 TaskGroup parallelization will tighten.'
+
+  ids_compliance:
+    article_iv_a: PASS
+    rationale: |
+      REUSE > ADAPT > CREATE honored: Story 5.3 reuses ChartViewModel.reload() pattern from 4.3, getBudgetStatus() from 4.6, ffiRefreshVendor from 5.1.
+      ADAPT applied to MainWindowView.topBar (added Refresh button — changes well under 30% of file).
+      Zero new files created — all logic added to existing ViewModel and View.
+
+# ─────────────────────────────────────────────────────────────────────
+# Verdict rationale (1-2 sentences for top-of-file status_reason)
+# ─────────────────────────────────────────────────────────────────────
+# All 9 ACs implemented and verified. xcodebuild Debug BUILD SUCCEEDED.
+# CodeRabbit independent re-run on uncommitted: zero findings.
+# Wave 5 end-to-end milestone is viable.
+# Score 9.7/10 — minor deductions for unit-test deferral and 40s worst-case latency.
