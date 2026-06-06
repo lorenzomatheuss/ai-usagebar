@@ -5,11 +5,11 @@
 //  Wave 4 Main Window root. Owns the `MainWindowViewModel` and lays out:
 //    - top bar : DateRangePicker (Story 4.2)
 //                 + ViewMode segmented picker (Story 4.4)
-//                 + future Cost/Requests toggle (Story 4.5)
-//    - content : StackedAreaChart (Story 4.3) OR PerVendorGrid (Story 4.4)
-//                driven by a `ChartViewModel` that observes the same
-//                `$dateRange`. Stories 4.5-4.6 will stack additional charts
-//                in this area.
+//                 + ChartMetric Cost/Requests picker (Story 4.5)
+//    - content : StackedAreaChart (Story 4.3) OR PerVendorGrid (Story 4.4),
+//                each parametrized by ChartMetric (Story 4.5). Driven by a
+//                `ChartViewModel` that observes the same `$dateRange`.
+//                Story 4.6 will stack additional charts in this area.
 //
 
 import SwiftUI
@@ -59,6 +59,14 @@ private struct ChartContent: View {
     /// sessions — when 1.5+ adds settings sync this can graduate to a
     /// `@AppStorage` or a published property on `MainWindowViewModel`.
     @State private var viewMode: ChartViewMode = .aggregate
+
+    /// Story 4.5 AC-4: chart metric (Cost vs Requests). Default `.cost` so
+    /// the window opens looking identical to the post-4.4 state. Lives
+    /// alongside `viewMode` as local UI state — AC-5 requires that toggling
+    /// it leaves the date range and view mode untouched, which falls out
+    /// naturally from the three states being independent `@State`/published
+    /// properties.
+    @State private var chartMetric: ChartMetric = .cost
 
     /// AC-7: respect Reduce Motion. The implicit fade between modes (driven
     /// by `.animation(_, value: viewMode)` below) becomes `nil` when the
@@ -115,6 +123,15 @@ private struct ChartContent: View {
             // `.labelsHidden()` because the segmented control's segments
             // are self-describing — the leading "View" label would just
             // add clutter at this width.
+            //
+            // Story 4.5 layout note (top-bar density): the default 900pt
+            // window now hosts three controls + the date picker. To stay
+            // on a single line even when DateRangePicker expands into
+            // Custom mode (two DatePickers ≈ +280pt), both segmented
+            // pickers were tightened — ViewMode 220→180, ChartMetric set
+            // to 160. Resulting estimate at 900pt: ~280 (date) + 180 (view)
+            // + 160 (metric) + 36 (paddings/spacing) = ~656pt, leaving
+            // ~244pt of headroom for the custom-range two-DatePicker case.
             Picker("View", selection: $viewMode) {
                 ForEach(ChartViewMode.allCases) { mode in
                     Text(mode.rawValue).tag(mode)
@@ -122,7 +139,21 @@ private struct ChartContent: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 220)
+            .frame(width: 180)
+
+            // Story 4.5 AC-4: segmented Cost / Requests metric switch.
+            // Distinct from the ViewMode picker conceptually — view mode is
+            // "how do I look at this data?", metric is "which dimension?".
+            // Both are segmented for parity with the existing 4.4 control
+            // pattern.
+            Picker("Metric", selection: $chartMetric) {
+                ForEach(ChartMetric.allCases) { metric in
+                    Text(metric.rawValue).tag(metric)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 160)
         }
     }
 
@@ -135,7 +166,8 @@ private struct ChartContent: View {
             case .aggregate:
                 StackedAreaChart(
                     chartData: chartViewModel.chartData,
-                    selectedVendor: chartViewModel.selectedVendor
+                    selectedVendor: chartViewModel.selectedVendor,
+                    metric: chartMetric
                 )
             case .perVendor:
                 PerVendorGrid(
@@ -144,7 +176,8 @@ private struct ChartContent: View {
                     selectedVendor: chartViewModel.selectedVendor,
                     onVendorSelected: { vendor in
                         chartViewModel.selectVendor(vendor)
-                    }
+                    },
+                    metric: chartMetric
                 )
             }
         }

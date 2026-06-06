@@ -48,11 +48,42 @@ struct MiniVendorChart: View {
     /// (AC-5). `nil` makes the card non-interactive (used by previews).
     var onTap: ((String) -> Void)? = nil
 
-    /// Total cost of the period for this vendor — header subtitle. Computed
-    /// once per render; cheap (≤ 168 doubles for the worst-case 7d-hourly
-    /// bucket count in `samples` for this vendor).
-    private var totalCost: Double {
-        samples.reduce(0) { $0 + $1.costUsd }
+    /// Story 4.5 AC-3: chosen Y-axis dimension. Default `.cost` keeps Story
+    /// 4.4 callers source-compatible.
+    var metric: ChartMetric = .cost
+
+    /// Story 4.5: projects an `AggregatedSample` onto the current metric.
+    /// Returns `Double` for chart-mark compatibility even though
+    /// `requestCount` is integral.
+    private func metricValue(_ sample: AggregatedSample) -> Double {
+        switch metric {
+        case .cost: return sample.costUsd
+        case .requests: return Double(sample.requestCount)
+        }
+    }
+
+    /// Total of the period for this vendor (replaces 4.4's `totalCost`).
+    /// Renamed to `totalValue` because, post-4.5, the unit is metric-
+    /// dependent — "cost" in the name would mislead under `.requests`.
+    /// Still `Double` so the existing `.currency` formatter path keeps
+    /// working without a generic dance.
+    private var totalValue: Double {
+        samples.reduce(0) { $0 + metricValue($1) }
+    }
+
+    /// Story 4.5: user-facing total string. Mirrors the formatting choice in
+    /// `StackedAreaChart.formattedMetricValue(for:)` so both the per-vendor
+    /// card header and the aggregate hover card speak the same language.
+    private var formattedTotal: String {
+        switch metric {
+        case .cost:
+            return "\(totalValue.formatted(.currency(code: "USD"))) total"
+        case .requests:
+            // `totalValue` was summed as `Double` to stay AreaMark-friendly,
+            // but a request count is logically an integer — convert back at
+            // the display boundary so we don't render "10.0 requests".
+            return "\(Int(totalValue.rounded())) requests"
+        }
     }
 
     private var displayName: String {
@@ -83,7 +114,10 @@ struct MiniVendorChart: View {
             onTap?(vendorId)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(displayName) cost chart, total \(totalCost.formatted(.currency(code: "USD")))")
+        // Story 4.5: VoiceOver label tracks the active metric so screen-
+        // reader users get the same Cost ↔ Requests context that sighted
+        // users get from the header.
+        .accessibilityLabel("\(displayName) \(metric.rawValue.lowercased()) chart, total \(formattedTotal)")
     }
 
     // MARK: - Header
@@ -94,7 +128,10 @@ struct MiniVendorChart: View {
                 Text(displayName)
                     .font(.headline)
                     .foregroundStyle(.primary)
-                Text("\(totalCost.formatted(.currency(code: "USD"))) total")
+                // Story 4.5: subtitle string flips with `metric`. Hits the
+                // single `formattedTotal` computed property so the header,
+                // accessibility label, and any future tooltip stay in sync.
+                Text(formattedTotal)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -125,7 +162,7 @@ struct MiniVendorChart: View {
                 ForEach(samples) { sample in
                     LineMark(
                         x: .value("Time", sample.timestamp),
-                        y: .value("Cost", sample.costUsd)
+                        y: .value(metric.yAxisLabel, metricValue(sample))
                     )
                     .foregroundStyle(vendorColor)
                     .interpolationMethod(.catmullRom)
@@ -133,7 +170,11 @@ struct MiniVendorChart: View {
             }
             // Compact axes — the 5-up grid means each card is small; full
             // currency-formatted ticks would visually crowd. Auto y-axis
-            // and an aligned x-axis is enough at this scale.
+            // and an aligned x-axis is enough at this scale. Story 4.5 keeps
+            // the y-axis `.automatic` regardless of metric: the small-card
+            // ticks are unitless visual scale cues; the header already names
+            // the unit ("USD total" vs "N requests"), so formatting the
+            // ticks differently would just be noise at this density.
             .chartXAxis {
                 AxisMarks(preset: .aligned, values: .automatic(desiredCount: 3))
             }
@@ -147,7 +188,7 @@ struct MiniVendorChart: View {
 
 // MARK: - Preview
 
-#Preview("Populated") {
+#Preview("Populated · Cost") {
     MiniVendorChart(
         vendorId: "anthropic",
         samples: (0..<24).map { hour in
@@ -157,7 +198,25 @@ struct MiniVendorChart: View {
                 costUsd: 0.10 + 0.02 * sin(Double(hour) / 24.0 * 2 * .pi),
                 requestCount: 12
             )
-        }
+        },
+        metric: .cost
+    )
+    .padding()
+    .frame(width: 300, height: 200)
+}
+
+#Preview("Populated · Requests") {
+    MiniVendorChart(
+        vendorId: "anthropic",
+        samples: (0..<24).map { hour in
+            AggregatedSample(
+                timestamp: Calendar.current.date(byAdding: .hour, value: hour, to: Date().addingTimeInterval(-86400)) ?? Date(),
+                vendor: "anthropic",
+                costUsd: 0.10 + 0.02 * sin(Double(hour) / 24.0 * 2 * .pi),
+                requestCount: 8 + Int((Double(hour) / 24.0 * 12).rounded())
+            )
+        },
+        metric: .requests
     )
     .padding()
     .frame(width: 300, height: 200)
