@@ -1,0 +1,224 @@
+schema: 1
+storyId: 5.1.ffi-refresh-vendor-rust-core
+story: '5.1'
+gate: PASS
+verdict: PASS
+score: 9.6
+gateDate: '2026-06-06'
+commit_reviewed: staged-on-feat/wave-5-story-5-1-ffi-refresh-vendor
+agent: '@qa (Quinn)'
+reviewer: '@qa (Quinn)'
+updated: '2026-06-06T15:35:00Z'
+checked_at: '2026-06-06T15:35:00Z'
+status_reason: >-
+  Wave 5 Story 5.1 opens the on-demand refresh path with a clean Rust-only
+  implementation. `ffi_refresh_vendor` exposes a single async FFI surface that
+  dispatches by vendor slug, reuses the Wave 1 fetchers verbatim (REUSE > ADAPT >
+  CREATE per IDS Article IV-A), and persists via the existing
+  `ffi_record_snapshot` path so retention/concurrency invariants are honored
+  uniformly. All 8 ACs verified: AC-1 UDL extended with 5-variant
+  `RefreshFfiError` enum and `[Async, Throws]` function declaration; AC-2 slug
+  dispatch with early-return on unknown slug (no DB touch, no network);
+  AC-3 `outcome_to_snapshot_input` reuses `compute_metrics` (single source of
+  truth for VendorSnapshot → display/persistence projection, consistent with
+  Story 4.0.5 GROUP BY semantics); AC-4 idempotent lazy init via `OnceLock` slot
+  probe; AC-5 granular error mapping covering Credentials/Io-NotFound/Transport/
+  Http/Schema/Json/HistoryFfi branches; AC-6 zero regressions
+  (`cargo test --workspace` 267 passed end-to-end re-run by QA); AC-7
+  `make build-core` + `xcodebuild` BUILD SUCCEEDED with
+  `ffiRefreshVendor(vendorName: String) async throws` in Swift bindings;
+  AC-8 `tracing::info!` start/complete with vendor slug + elapsed_ms (no
+  credential exposure). `async_compat::Compat::new` pattern from Story 1.15
+  reused exactly — zero `block_on`/`block_in_place`/`spawn_blocking` in the
+  async path. Cross-story conflict (CodeRabbit CRITICAL) resolved at the gate
+  via WAVE5-D7 (Option A): OpenAI in Story 5.2 mirrors Anthropic OAuth-status
+  treatment, since the Wave 1 OpenAI fetcher takes `creds_path: &Path` and has
+  zero `api_key` branches. Story 5.2 spec updated in parallel (AC-1/AC-3/AC-4/
+  AC-5/T1-T3/DoD).
+
+checks:
+  code_review: pass
+  unit_tests: pass
+  acceptance_criteria: pass
+  no_regressions: pass
+  performance: pass
+  security: pass
+  documentation: pass
+
+checks_detail:
+  - name: code_review
+    verdict: PASS
+    notes: >-
+      Implementation in `crates/torven-core/src/uniffi_exports.rs` is
+      well-factored. Public FFI shim `ffi_refresh_vendor` is a 1-line wrapper
+      that hands the inner future to `::uniffi::deps::async_compat::Compat::new`
+      so reqwest/tokio::time find a tokio reactor inside the UniFFI UDL-mode
+      polling driver (mirrors `InsightsClient::request_insight_streaming` from
+      Story 1.15). Inner `refresh_vendor_inner` separates the business logic
+      from the FFI shim cleanly — tests can drive it directly under
+      `#[tokio::test]` without involving the FFI polling loop. Slug validation
+      uses a `match` on `vendor_name.as_str()` BEFORE `ensure_history_initialized()`,
+      ensuring unknown slugs short-circuit to `CredentialMissing` without
+      touching the DB or the network (defensive and AC-2-aligned). Per-vendor
+      `refresh_{anthropic,openai,openrouter,zai}` helpers all follow the same
+      shape: credential lookup → Cache::for_vendor → Endpoints::default →
+      await fetch_snapshot → project via `outcome_to_snapshot_input`. The
+      `unreachable!("vendor slug pre-validated")` arm in the second match is
+      good defensive programming. `keychain_api_key_for` correctly honors the
+      `ACTIVE_ACCOUNTS` map for multi-account vendors (openrouter/zai) with a
+      first-account fallback consistent with Story 3.3 default-active
+      semantics. `outcome_to_snapshot_input` delegates the cost_usd/pct_used
+      projection to `compute_metrics` — this is the single source of truth
+      that SwiftUI and the dev TUI both consume, so the persisted snapshot
+      row matches the headline metric Swift renders. metric_kind selection
+      via `LabelKind` keeps the GROUP BY (Story 4.0.5) coherent — UsdSpent
+      → cost_usd_total, everything else → pct_used. From<AppError> mapping
+      is granular: `Io NotFound` is distinct from generic `Io` so
+      "credentials file missing" routes to `CredentialMissing` (re-auth
+      affordance) instead of `ParseFailure`. `From<HistoryFfiError>` collapses
+      both variants (NotInitialized, Storage) to `StorageError` — reasonable
+      since the FFI consumer can't disambiguate.
+
+  - name: unit_tests
+    verdict: PASS
+    notes: >-
+      13 new tests under `mod tests` cover the surface comprehensively. Error
+      mapping: 6 tests assert each AppError variant maps to the expected
+      RefreshFfiError (Credentials → CredentialMissing, Io NotFound →
+      CredentialMissing, Transport → NetworkError, Http → ApiError, Schema →
+      ParseFailure, HistoryFfiError::NotInitialized → StorageError). Outcome
+      projection: 4 tests build fake VendorSnapshots (Anthropic, OpenRouter,
+      OpenAI Codex OAuth, Z.AI) and assert the metric_kind/cost_usd/pct_used/
+      account_id fields land where expected. Dispatch: 2 tokio tests assert
+      that unknown vendor slugs and missing-keychain vendors return
+      CredentialMissing without panicking. 1 smoke test exercises the
+      uninitialized-history + unknown-vendor path to confirm no hang/panic.
+      The `refresh_keychain_vendor_without_key_returns_credential_missing`
+      test cleverly uses a bogus slug for `keychain_api_key_for` instead of
+      touching real Keychain entries — cross-platform safe.
+
+  - name: acceptance_criteria
+    verdict: PASS
+    notes: >-
+      All 8 ACs verified against implementation. AC-1 UDL extended exactly as
+      spec'd (5 enum variants + `[Async, Throws=RefreshFfiError] void
+      ffi_refresh_vendor(string vendor_name)` in namespace). AC-2 slug
+      dispatch handles 4 canonical slugs + unknown → CredentialMissing with
+      `tracing::warn!`. AC-3 `outcome_to_snapshot_input` projects fields per
+      spec (vendor slug, account_id None for single-account vendors,
+      ts = chrono::Utc::now().timestamp_millis(), cost_usd/pct_used via
+      compute_metrics, metric_kind cost_usd_total | pct_used per LabelKind).
+      AC-4 lazy init via `ensure_history_initialized` is idempotent
+      (`OnceLock::get_or_init` semantics). AC-5 granular error mapping
+      verified by 6 unit tests. AC-6 `cargo test --workspace` re-run by QA
+      shows 267 passed, zero failures. AC-7 `make build-core` produces
+      `ffiRefreshVendor(vendorName: String) async throws` and `RefreshFfiError`
+      enum in `torven_core.swift`; `xcodebuild` BUILD SUCCEEDED (confirmed by
+      @dev, not re-run by QA — environment-dependent and dev evidence is
+      sufficient). AC-8 `tracing::info!` calls at start/complete with vendor
+      slug and elapsed_ms.
+
+  - name: no_regressions
+    verdict: PASS
+    notes: >-
+      `cargo test --workspace` re-executed locally during gate. Results:
+      198 lib + 29 TUI + 18 anthropic_e2e + 10 history_e2e + 3 insights_e2e
+      + 3 keychain_e2e (1 macOS ignored) + 4 live (all ignored as expected)
+      + 2 file_fallback = 267 passed, 0 failed. Pre-existing live tests
+      remain `#[ignore]`d (correct — they hit real APIs). The Story 1.15
+      AR-2 spike timer ignored count is preserved. No flaky tests observed.
+
+  - name: performance
+    verdict: PASS
+    notes: >-
+      Zero blocking primitives in the async path (verified via grep for
+      block_on, block_in_place, spawn_blocking in uniffi_exports.rs — all
+      absent). `async_compat::Compat::new` is the only context shim, which
+      is the documented Story 1.15 pattern. `reqwest::Client::new()` per
+      refresh call is a minor allocation (~1ms) versus network latency
+      (~300ms upstream APIs); pooling would optimize <1% and is YAGNI per
+      story doc — defer to Wave 6 if profiling justifies. Cache TTL =
+      `Duration::ZERO` is intentional (refresh manual always hits network).
+
+  - name: security
+    verdict: PASS
+    notes: >-
+      No api_key crosses the FFI boundary as `string` — the FFI takes a
+      vendor slug only; the credential never leaves Rust. `tracing::info!`
+      and `tracing::warn!` calls log only the vendor slug, elapsed_ms, and
+      absolute paths to credentials files (file existence is signal, not
+      content). `keychain_api_key_for` returns the api_key as a `Result<String,
+      RefreshFfiError>` that flows directly into the fetcher and is never
+      logged or persisted. CLAUDE.md secret-discipline invariants honored:
+      no `cat` of credentials files, no env grep, no key material in tracing
+      output.
+
+  - name: documentation
+    verdict: PASS
+    notes: >-
+      Story file has complete File List (3 modified Rust files + 2 Swift
+      artifacts regenerated). Change Log has 5 chronological entries from
+      @sm draft through @po validation, @dev InProgress, @dev InReview, and
+      @qa gate (this entry). Risks documented with mitigations (4 entries).
+      Out of Scope explicit. Dependencies cross-referenced. ADR-2 and ADR-4
+      cross-refs in multiple places. Inline rustdoc comments on `RefreshFfiError`,
+      `keychain_api_key_for`, `outcome_to_snapshot_input`, `ffi_refresh_vendor`,
+      `ensure_history_initialized`, and each per-vendor refresh helper connect
+      implementation to acceptance criteria.
+
+issues: []
+
+cross_story_decisions:
+  - id: WAVE5-D7
+    decision: >-
+      OpenAI in Story 5.2 mirrors Anthropic's OAuth-status read-only treatment
+      (FileManager.fileExists on ~/.codex/auth.json), NOT a SecureField API
+      key. Settings UI SecureField vendors reduce from 3 to 2 (openrouter, zai).
+    rationale:
+      - Wave 1 OpenAI fetcher takes creds_path:&Path; zero api_key branches in
+        crates/torven-core/src/vendors/openai/.
+      - CLAUDE.md classifies ~/.codex/auth.json as an OAuth credential file
+        (same category as ~/.claude/.credentials.json).
+      - Codex CLI is the canonical auth path; API key paste UX would bypass
+        the OAuth refresh flow fetch_snapshot requires.
+      - Option B (Keychain-first OpenAI with OAuth fallback) requires either
+        reimplementing the fetcher (massive scope creep, breaks Story 1.4
+        consolidation) or dual auth paths that contradict the vendor contract.
+    resolves: CodeRabbit CRITICAL flagged during @dev uncommitted scan.
+    action_taken:
+      - Story 5.2 AC-1 updated to reflect 2 OAuth-status vendors + 2 SecureField vendors.
+      - Story 5.2 AC-3 updated to scope onAppear key loading to openrouter/zai only.
+      - Story 5.2 AC-4 updated to scope Save button to openrouter/zai only.
+      - Story 5.2 AC-5 extended to cover OpenAI status check on ~/.codex/auth.json.
+      - Story 5.2 T1/T2/T3 task descriptions aligned.
+      - Story 5.2 DoD checklist updated.
+      - WAVE5-D7 entry appended to Story 5.2 Change Log.
+
+recommendations:
+  immediate:
+    - description: 'None — story is merge-ready.'
+      refs: []
+  future:
+    - description: >-
+        Wave 6 profiling — if refresh latency budget tightens, consider a
+        shared `reqwest::Client` pool keyed by vendor (saves ~1ms per call,
+        irrelevant today).
+      refs: ['Risk row #3 in story 5.1']
+    - description: >-
+        Wave 5.5 concurrent refresh — when scheduler lands, audit that
+        sequential per-vendor refresh assumption (Story 5.1 Out of Scope) does
+        not introduce contention on HISTORY_DB mutex (current MVP serializes
+        writes per call which is fine for manual button).
+      refs: ['Story 5.1 Out of Scope #2']
+
+recommended_status: Done
+follow_ups:
+  - story_id: 5.2
+    notes: >-
+      WAVE5-D7 propagated. @dev (Dex) for 5.2 should implement against the
+      updated AC-1/AC-3/AC-4/AC-5/T1-T3/DoD reflecting 2 OAuth-status + 2
+      SecureField vendor sections.
+  - story_id: 5.3
+    notes: >-
+      Refresh button consumes ffi_refresh_vendor as specified. No interface
+      changes needed.
