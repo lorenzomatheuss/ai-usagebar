@@ -107,6 +107,16 @@ private struct ChartContent: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.red.opacity(0.08))
             }
+
+            // Story 4.6 (AC-6): budget burn footer. `BudgetBurn` itself
+            // returns `EmptyView()` when no `[budgets]` is configured, but
+            // we ALSO gate the leading `Divider()` on `hasBudget` so the
+            // footer collapses to zero pixels for users without a budget
+            // (no orphan divider line at the window's bottom edge).
+            if chartViewModel.budgetStatus.hasBudget {
+                Divider()
+                BudgetBurn(status: chartViewModel.budgetStatus)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

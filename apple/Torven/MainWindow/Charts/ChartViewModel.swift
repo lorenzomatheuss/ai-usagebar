@@ -61,6 +61,18 @@ final class ChartViewModel: ObservableObject {
     /// Per-vendor grid draws a colored border around the matching card.
     @Published private(set) var selectedVendor: String?
 
+    /// Story 4.6 (Wave 4): month-to-date budget burn status, fetched
+    /// alongside each chart reload via `getBudgetStatus()`. Defaulted to a
+    /// `hasBudget == false` value so `BudgetBurn` renders `EmptyView()`
+    /// before the first reload completes (no flash of stale data).
+    @Published private(set) var budgetStatus: BudgetStatus = BudgetStatus(
+        totalSpentUsd: 0.0,
+        totalBudgetUsd: nil,
+        totalPercentUsed: 0.0,
+        perVendor: [],
+        hasBudget: false
+    )
+
     /// Story 4.4 AC-3: `chartData.samples` grouped by `.vendor`. Computed
     /// on demand so we don't have to invalidate a stored cache every time
     /// `chartData` is republished. `Dictionary(grouping:by:)` is O(n) and
@@ -185,6 +197,16 @@ final class ChartViewModel: ObservableObject {
 
                 self.chartData = AggregatedSample.fromFFI(buckets)
                 self.errorMessage = nil
+
+                // Story 4.6: refresh the budget burn alongside the chart.
+                // `getBudgetStatus()` is synchronous (no [Async] in UDL) and
+                // server-side returns `hasBudget = false` gracefully when
+                // SQLite is uninitialised — so we can call it here without
+                // additional error handling. Doing the fetch in the same
+                // Task keeps the gauge in sync with the rest of the view's
+                // refresh cadence, and the call is cheap (early-returns
+                // when no `[budgets]` is configured).
+                self.budgetStatus = getBudgetStatus()
             } catch let error as HistoryFfiError {
                 // Re-running init may help if the slot was lost (shouldn't
                 // happen mid-process but cheap defence against a future
