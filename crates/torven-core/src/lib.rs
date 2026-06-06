@@ -24,6 +24,7 @@
 //! functions live in [`uniffi_exports`] and are re-exported here so the
 //! generated scaffolding can find them via `crate::ping()`.
 
+pub mod budgets;
 pub mod cache;
 pub mod config;
 pub mod countdown;
@@ -50,11 +51,12 @@ pub use insights::{
     InsightsError, InsightsOutput, VendorAggregate,
 };
 pub use uniffi_exports::{
-    AccountFfiError, AccountInfo, BucketStrategy, HistoryAccountFilterMode, HistoryFfiError,
-    HistorySnapshot, InsightsClient, KeychainFfiError, PagedHistorySnapshots, TimeBucket,
-    UsageSnapshotInput, VendorInfo, ffi_init_history, ffi_keychain_get_blob, ffi_keychain_set_blob,
-    ffi_query_aggregated, ffi_query_snapshots, ffi_record_snapshot, ffi_run_retention_janitor,
-    get_accounts_for_vendor, get_vendor_list, ping, set_active_account,
+    AccountFfiError, AccountInfo, BucketStrategy, BudgetStatus, HistoryAccountFilterMode,
+    HistoryFfiError, HistorySnapshot, InsightsClient, KeychainFfiError, PagedHistorySnapshots,
+    TimeBucket, UsageSnapshotInput, VendorBudgetStatus, VendorInfo, ffi_init_history,
+    ffi_keychain_get_blob, ffi_keychain_set_blob, ffi_query_aggregated, ffi_query_snapshots,
+    ffi_record_snapshot, ffi_run_retention_janitor, get_accounts_for_vendor, get_budget_status,
+    get_vendor_list, ping, set_active_account,
 };
 
 uniffi::include_scaffolding!("torven_core");
