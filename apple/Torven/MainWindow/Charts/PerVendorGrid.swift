@@ -49,6 +49,12 @@ struct PerVendorGrid: View {
     let selectedVendor: String?
     var onVendorSelected: ((String?) -> Void)? = nil
 
+    /// Story 4.5 AC-3 propagation: each `MiniVendorChart` is parametrized by
+    /// `ChartMetric`. The grid is a thin pass-through — it doesn't render any
+    /// data of its own, so the metric flows straight to children. Default
+    /// `.cost` keeps Story 4.4 callsites and previews source-compatible.
+    var metric: ChartMetric = .cost
+
     private let columns: [GridItem] = [
         GridItem(.adaptive(minimum: 260), spacing: 16, alignment: .top)
     ]
@@ -77,7 +83,8 @@ struct PerVendorGrid: View {
                         samples: samplesByVendor[vendor] ?? [],
                         onTap: { tapped in
                             onVendorSelected?(tapped)
-                        }
+                        },
+                        metric: metric
                     )
                     // AC-5: selection highlight. The overlay border is
                     // always drawn but with `lineWidth 0` when not
@@ -141,6 +148,18 @@ struct PerVendorGrid: View {
         samplesByVendor: mockData.samplesByVendor,
         selectedVendor: "anthropic",
         onVendorSelected: nil
+    )
+    .frame(width: 900, height: 500)
+}
+
+#Preview("5 vendors × 7 days · Requests") {
+    let mockData = PerVendorGridPreviewData.mock5x7
+    return PerVendorGrid(
+        chartData: mockData.chartData,
+        samplesByVendor: mockData.samplesByVendor,
+        selectedVendor: nil,
+        onVendorSelected: nil,
+        metric: .requests
     )
     .frame(width: 900, height: 500)
 }

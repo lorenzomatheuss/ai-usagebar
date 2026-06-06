@@ -165,3 +165,36 @@ extension AggregatedSample {
         return ChartData(samples: samples, vendors: vendors)
     }
 }
+
+// MARK: - ChartMetric (Story 4.5)
+
+/// Selects which numeric dimension of `AggregatedSample` the chart layer
+/// renders on its Y-axis: cumulative USD cost or raw request count.
+///
+/// Co-located with the other chart-domain types (rather than promoted to its
+/// own file) because:
+///   1. `StackedAreaChart`, `MiniVendorChart`, and `PerVendorGrid` all reach
+///      for both `AggregatedSample` and `ChartMetric` in the same scope —
+///      keeping them in one file means a single `import` line for callers.
+///   2. The enum is structurally trivial (two cases, two computed strings)
+///      and unlikely to grow before Wave 5 introduces tokens/latency metrics.
+///      When that happens, a dedicated `ChartMetric.swift` becomes warranted.
+///
+/// `String`-backed raw values double as the segmented Picker's user-facing
+/// label (no localization yet — v1.0 ships English-only per ADR-2).
+enum ChartMetric: String, CaseIterable, Identifiable {
+    case cost = "Cost"
+    case requests = "Requests"
+
+    var id: String { rawValue }
+
+    /// Y-axis title used by both `StackedAreaChart` and `MiniVendorChart`.
+    /// Cost keeps the "(USD)" suffix to match the legacy 4.3 chart; requests
+    /// is a unitless count so the bare metric name suffices.
+    var yAxisLabel: String {
+        switch self {
+        case .cost: return "Cost (USD)"
+        case .requests: return "Requests"
+        }
+    }
+}

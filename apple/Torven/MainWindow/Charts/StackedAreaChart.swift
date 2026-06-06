@@ -66,6 +66,11 @@ struct StackedAreaChart: View {
     /// behaviour).
     var selectedVendor: String? = nil
 
+    /// Story 4.5 AC-2: chosen Y-axis dimension. Default `.cost` preserves the
+    /// Story 4.3 callers' behaviour and avoids a breaking change when this
+    /// view is summoned from preview blocks or older test sites.
+    var metric: ChartMetric = .cost
+
     // AC-7: respect Reduce Motion — disables the implicit cross-fade Swift
     // Charts applies when the underlying data identity changes (e.g. range
     // switch). `nil` animation = instant transition.
@@ -95,6 +100,33 @@ struct StackedAreaChart: View {
         return chartData.samples.filter { $0.vendor == selectedVendor }
     }
 
+    /// Story 4.5 AC-2: projects an `AggregatedSample` onto the current
+    /// `metric`'s Y-axis value. Returning `Double` (even for the integer
+    /// `requestCount`) keeps the `AreaMark` y-`.value(...)` builder happy
+    /// without a separate generic chart path.
+    private func metricValue(_ sample: AggregatedSample) -> Double {
+        switch metric {
+        case .cost: return sample.costUsd
+        case .requests: return Double(sample.requestCount)
+        }
+    }
+
+    /// Story 4.5: hover-card formatter mirroring `metricValue`. Returns the
+    /// user-facing string for the current metric. Kept beside `metricValue`
+    /// so future metrics (tokens, latency) only need to grow one switch.
+    private func formattedMetricValue(for sample: AggregatedSample) -> String {
+        switch metric {
+        case .cost:
+            return sample.costUsd.formatted(.currency(code: "USD"))
+        case .requests:
+            // Integer formatting — `requestCount` is already `Int`; using it
+            // directly avoids a stringly-typed "%d" path. Trailing "requests"
+            // word disambiguates the count from a currency value in the
+            // hover popover.
+            return "\(sample.requestCount) requests"
+        }
+    }
+
     // MARK: - Chart
 
     private var chartView: some View {
@@ -102,7 +134,7 @@ struct StackedAreaChart: View {
             ForEach(visibleSamples) { sample in
                 AreaMark(
                     x: .value("Time", sample.timestamp),
-                    y: .value("Cost (USD)", sample.costUsd)
+                    y: .value(metric.yAxisLabel, metricValue(sample))
                 )
                 .foregroundStyle(by: .value("Vendor", sample.vendor))
                 .interpolationMethod(.catmullRom)
@@ -123,7 +155,18 @@ struct StackedAreaChart: View {
             AxisMarks(preset: .aligned)
         }
         .chartYAxis {
-            AxisMarks(format: .currency(code: "USD"))
+            // Story 4.5 AC-2: format flips with the active metric. Currency
+            // for `.cost` keeps the legacy 4.3 axis exactly; integer for
+            // `.requests` avoids "$" prefixes on a count value, which would
+            // mislead the eye. `IntegerFormatStyle<Int>()` is the macOS-13-
+            // safe way to spell "no decimals, no currency" — `Decimal.FormatStyle`
+            // also works but pulls in a Foundation type the chart doesn't
+            // otherwise need.
+            if metric == .cost {
+                AxisMarks(format: .currency(code: "USD"))
+            } else {
+                AxisMarks(format: IntegerFormatStyle<Int>())
+            }
         }
         .chartLegend(position: .bottom, alignment: .center)
         // AC-6 hover overlay. `chartOverlay` gives us a `ChartProxy` that
@@ -256,7 +299,13 @@ struct StackedAreaChart: View {
                     Text(sample.vendor)
                         .font(.caption)
                     Spacer()
-                    Text(sample.costUsd.formatted(.currency(code: "USD")))
+                    // Story 4.5: annotation reads the same value the chart is
+                    // drawing — currency string for `.cost`, "N requests" for
+                    // `.requests`. Without this branch the card would still
+                    // show USD even while the chart's bars/areas were sized
+                    // by request count, which is the kind of subtle mismatch
+                    // that erodes user trust in the visualization.
+                    Text(formattedMetricValue(for: sample))
                         .font(.caption.monospacedDigit())
                 }
             }
@@ -277,8 +326,14 @@ struct StackedAreaChart: View {
 
 // MARK: - Preview (AC-10 + T6 perf inspection)
 
-#Preview("7 days × 5 vendors (mock)") {
-    StackedAreaChart(chartData: .previewMock7Days)
+#Preview("7 days × 5 vendors · Cost") {
+    StackedAreaChart(chartData: .previewMock7Days, metric: .cost)
+        .padding()
+        .frame(width: 900, height: 500)
+}
+
+#Preview("7 days × 5 vendors · Requests") {
+    StackedAreaChart(chartData: .previewMock7Days, metric: .requests)
         .padding()
         .frame(width: 900, height: 500)
 }
