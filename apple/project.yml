@@ -40,6 +40,19 @@ targets:
     info:
       path: Torven/Info.plist
       properties:
+        # Story 5.2.1 iteration 4 (WAVE5-D8-impl-v4 FINAL): `LSUIElement: true`
+        # preservado. Iter 3 (Pragmática 1) tentou removê-lo, mas smoke do
+        # Lorenzo mostrou app ainda encerrando ao fechar Settings mesmo com
+        # `applicationShouldTerminateAfterLastWindowClosed { false }` — quirk
+        # do `MenuBarExtra` + `Settings { }` SwiftUI scene em macOS 13+ que
+        # AppDelegate adapter não consegue segurar. Pragmática 2 (FINAL):
+        # bypassa a `Settings { }` scene SwiftUI inteiramente — Settings UI
+        # agora é wrapped via `NSHostingView` dentro de um `NSWindow`
+        # programático (ver `SettingsWindowController.swift`, mesmo pattern
+        # de `MainWindowController.swift`/Story 4.1, já em produção). Sem
+        # XPC/ViewBridge envolvido — `NSWindow` programático não passa por
+        # XPC, portanto `.accessory` activation policy do `LSUIElement: true`
+        # não causa cancelamento. App segue menu-bar-only sem dock icon.
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.developer-tools
     scheme:
