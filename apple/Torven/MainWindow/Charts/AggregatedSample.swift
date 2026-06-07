@@ -24,16 +24,19 @@
 //  FFI boundary and silently drift if the Rust enum ever grows a variant.
 //
 
+import Charts
 import Foundation
 import SwiftUI
 
 // MARK: - Vendor color mapping (shared chart infra)
 
-/// Brand-aligned colors for the 5 supported vendors. Originally defined in
+/// Brand-aligned colors for the 4 supported vendors. Originally defined in
 /// `StackedAreaChart.swift` (Story 4.3); promoted to shared scope in Story 4.4
 /// so `MiniVendorChart` (per-vendor grid) and `PerVendorGrid` (selection
 /// highlight border) can reuse the same palette without duplicating the
-/// declaration.
+/// declaration. Story 5.5.1 (WAVE5.5-D1) dropped the reserved Gemini slot —
+/// the entry was confusing the chart legend during live smoke and Gemini
+/// is no longer in the v1.0 vendor list.
 ///
 /// `KeyValuePairs` (not `[String: Color]`) because Swift Charts consumes
 /// `chartForegroundStyleScale` order-sensitively — the legend renders in
@@ -47,7 +50,6 @@ let chartVendorColorMapping: KeyValuePairs<String, Color> = [
     "anthropic":  Color(red: 0.94, green: 0.49, blue: 0.22),  // orange
     "openai":     Color(red: 0.10, green: 0.52, blue: 0.36),  // dark green
     "zai":        Color(red: 0.20, green: 0.51, blue: 0.93),  // blue
-    "gemini":     Color(red: 0.62, green: 0.62, blue: 0.62),  // grey (reserved)
 ]
 
 /// Looks up a vendor's chart color from `chartVendorColorMapping`. Returns
@@ -67,12 +69,16 @@ func chartVendorColor(for vendor: String) -> Color {
 /// (not a dictionary) so the compiler can warn if a new vendor id is added
 /// to the palette without a matching display name.
 func chartVendorDisplayName(_ vendorId: String) -> String {
+    // Story 5.5.1 (WAVE5.5-D1) removed the explicit Gemini case. The
+    // `default` fallback handles any future/unknown vendor slug — including
+    // the unlikely case that legacy persisted data still references the old
+    // Gemini slug — by Title-casing the slug rather than rendering an empty
+    // label.
     switch vendorId {
     case "openrouter": return "OpenRouter"
     case "anthropic":  return "Anthropic"
     case "openai":     return "OpenAI"
     case "zai":        return "Z.AI"
-    case "gemini":     return "Gemini"
     default:           return vendorId.capitalized
     }
 }
@@ -125,6 +131,38 @@ struct ChartData: Equatable {
     var isEmpty: Bool { samples.isEmpty }
 
     static let empty = ChartData(samples: [], vendors: [])
+}
+
+// MARK: - Chart interpolation helper (Story 5.5.1 / WAVE5.5-D3)
+
+/// Picks the right Swift Charts `InterpolationMethod` for a given sample
+/// count. `.catmullRom` requires **at least 2 data points** to produce a
+/// spline — feeding it a single sample renders an empty chart, which live
+/// smoke on 2026-06-07 surfaced as ISSUE-C (a "1 day of data" run looked
+/// indistinguishable from "no data"). Falling back to `.linear` for the
+/// degenerate case lets a single point render as a flat segment while
+/// preserving the catmullRom curve everywhere it's well-defined.
+///
+/// `internal` (default) visibility — both `StackedAreaChart` (which holds
+/// a `ChartData`) and `MiniVendorChart` (which holds a pre-filtered
+/// `[AggregatedSample]`) need to consult this with their respective input
+/// shapes, so we expose two convenience entry points.
+extension ChartData {
+    /// Interpolation method to use when rendering the aggregated samples of
+    /// this `ChartData`. See the file-level docs above for the rationale.
+    var interpolation: InterpolationMethod {
+        samples.count >= 2 ? .catmullRom : .linear
+    }
+}
+
+extension Array where Element == AggregatedSample {
+    /// Same `samples.count >= 2 ? .catmullRom : .linear` rule applied to a
+    /// pre-filtered per-vendor sample array. Used by `MiniVendorChart`
+    /// (which never sees the outer `ChartData`) so a single-point vendor
+    /// card doesn't render empty inside an otherwise multi-point grid.
+    var chartInterpolation: InterpolationMethod {
+        count >= 2 ? .catmullRom : .linear
+    }
 }
 
 // MARK: - FFI translation

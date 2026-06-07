@@ -62,8 +62,10 @@ struct VendorKeyRow: View {
             // Disabling autocorrect/capitalization avoids the macOS text
             // engine helpfully "fixing" an `sk-…` key. SecureField masks the
             // display but the underlying string still passes through the
-            // input pipeline.
-            .disableAutocorrection(true)
+            // input pipeline. Story 5.5.1 (MNT-001) dropped the legacy
+            // `.disableAutocorrection(true)` call: it was deprecated in
+            // macOS 14 in favor of `.autocorrectionDisabled(true)` and
+            // produced a build warning on every clean build.
             .autocorrectionDisabled(true)
 
         HStack(spacing: 12) {

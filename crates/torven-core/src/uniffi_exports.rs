@@ -190,9 +190,12 @@ pub enum KeychainFfiError {
 
 /// Returns the canonical list of LLM vendors Torven knows about.
 ///
-/// Story 1.5 hardcodes all 5 vendors with `is_configured = false`. The order
+/// Story 1.5 hardcoded 5 vendors with `is_configured = false`. Story 5.5.1
+/// (WAVE5.5-D1) trimmed the list to 4 by removing Gemini — it was a reserved
+/// placeholder that never received a Rust vendor module, and live smoke
+/// surfaced its empty legend slot as confusing UX. The remaining order
 /// mirrors the legacy Waybar widget rollout (Anthropic → OpenAI →
-/// OpenRouter → Z.AI → Gemini). Story 1.6 swaps this implementation for a
+/// OpenRouter → Z.AI). Story 1.6 swaps this implementation for a
 /// config-driven probe.
 ///
 /// ## FFI memory ownership (AR-3)
@@ -204,6 +207,11 @@ pub enum KeychainFfiError {
 /// (see Change Log) validates zero leaks under `leaks --atExit` after 100
 /// invocations.
 pub fn get_vendor_list() -> Vec<VendorInfo> {
+    // Story 5.5.1 (WAVE5.5-D1): Gemini removed from the canonical vendor list.
+    // It was a reserved-slot placeholder from Story 1.5 that never received
+    // a Rust vendor module nor product-side validation; live smoke on
+    // 2026-06-07 surfaced it as a confusing legend entry. Re-adding Gemini
+    // is a post-v1.0 decision conditional on demand.
     vec![
         VendorInfo {
             id: "anthropic".to_string(),
@@ -223,11 +231,6 @@ pub fn get_vendor_list() -> Vec<VendorInfo> {
         VendorInfo {
             id: "zai".to_string(),
             display_name: "Z.AI".to_string(),
-            is_configured: false,
-        },
-        VendorInfo {
-            id: "gemini".to_string(),
-            display_name: "Google Gemini".to_string(),
             is_configured: false,
         },
     ]
@@ -1274,9 +1277,16 @@ mod tests {
     }
 
     #[test]
-    fn get_vendor_list_returns_five_vendors() {
+    fn get_vendor_list_returns_four_vendors() {
+        // Story 5.5.1 (WAVE5.5-D1): the canonical list dropped from 5 → 4
+        // when Gemini was removed (no Rust vendor module, no product
+        // validation). Re-adding Gemini bumps this back to 5.
         let vendors = get_vendor_list();
-        assert_eq!(vendors.len(), 5, "Story 1.5 expects exactly 5 vendors");
+        assert_eq!(
+            vendors.len(),
+            4,
+            "Story 5.5.1 expects exactly 4 vendors (Gemini removed)"
+        );
     }
 
     #[test]
@@ -1285,8 +1295,9 @@ mod tests {
         let ids: Vec<&str> = vendors.iter().map(|v| v.id.as_str()).collect();
         assert_eq!(
             ids,
-            vec!["anthropic", "openai", "openrouter", "zai", "gemini"],
-            "Vendor order must match the legacy Waybar rollout priority"
+            vec!["anthropic", "openai", "openrouter", "zai"],
+            "Vendor order must match the legacy Waybar rollout priority \
+             (Gemini removed in Story 5.5.1)"
         );
     }
 
@@ -1296,10 +1307,26 @@ mod tests {
         // this implementation with a real config probe — when that lands,
         // this assertion should be deleted (the new test will assert that
         // `is_configured` reflects the loaded config).
+        // Story 5.5.1 narrowed the list from 5 → 4 vendors; intent is
+        // unchanged (all hardcoded `false`).
         let vendors = get_vendor_list();
         assert!(
             vendors.iter().all(|v| !v.is_configured),
             "Story 1.5 hardcodes is_configured=false for all vendors"
+        );
+    }
+
+    #[test]
+    fn get_vendor_list_does_not_contain_gemini() {
+        // Story 5.5.1 (WAVE5.5-D1) regression guard: Gemini was removed
+        // from the canonical vendor list because it never received a Rust
+        // vendor module and live smoke surfaced its empty legend slot as
+        // confusing UX. This test fails loudly if someone reintroduces the
+        // entry without explicit product re-approval.
+        let vendors = get_vendor_list();
+        assert!(
+            vendors.iter().all(|v| v.id != "gemini"),
+            "Gemini was removed in Story 5.5.1 — re-add requires product sign-off"
         );
     }
 

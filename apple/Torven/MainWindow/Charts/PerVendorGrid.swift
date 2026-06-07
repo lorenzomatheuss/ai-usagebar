@@ -183,7 +183,11 @@ private enum PerVendorGridPreviewData {
     }
 
     static var mock5x7: Mock {
-        let vendors = ["anthropic", "gemini", "openai", "openrouter", "zai"]
+        // Story 5.5.1 (WAVE5.5-D1): Gemini removed from the v1.0 vendor list;
+        // the preview mock now exercises the 4 supported vendors. The
+        // identifier `mock5x7` is preserved (renaming it would churn the
+        // SwiftUI #Preview references for no functional gain).
+        let vendors = ["anthropic", "openai", "openrouter", "zai"]
         let calendar = Calendar.current
         let now = Date()
         let dayStart = calendar.startOfDay(for: now)

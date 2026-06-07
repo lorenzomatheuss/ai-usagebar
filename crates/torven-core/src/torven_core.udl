@@ -375,7 +375,9 @@ namespace torven_core {
     // Order is significant: the menu-bar app renders vendors in the order
     // returned here. Current order matches the rollout / market-share
     // priority used in the legacy Waybar widget (Anthropic first, OpenAI
-    // second, then OpenRouter, Z.AI, Gemini).
+    // second, then OpenRouter, Z.AI). Gemini was removed in Story 5.5.1
+    // (WAVE5.5-D1) — never had a Rust vendor module and its empty legend
+    // slot confused live-smoke users.
     sequence<VendorInfo> get_vendor_list();
 
     // Initializes the Rust-owned SQLite history database. If `db_path` is not

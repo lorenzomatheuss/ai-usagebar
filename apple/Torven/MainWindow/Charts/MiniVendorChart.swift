@@ -171,7 +171,12 @@ struct MiniVendorChart: View {
                         y: .value(metric.yAxisLabel, metricValue(sample))
                     )
                     .foregroundStyle(vendorColor)
-                    .interpolationMethod(.catmullRom)
+                    // Story 5.5.1 (WAVE5.5-D3 / ISSUE-C): falls back to
+                    // `.linear` when this vendor has a single sample so
+                    // the mini-card renders a flat segment instead of a
+                    // blank rectangle. See `Array<AggregatedSample>
+                    // .chartInterpolation` in `AggregatedSample.swift`.
+                    .interpolationMethod(samples.chartInterpolation)
                 }
             }
             // Compact axes — the 5-up grid means each card is small; full
