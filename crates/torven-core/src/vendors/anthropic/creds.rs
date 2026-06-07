@@ -239,10 +239,14 @@ pub fn write_back(path: &Path, new_oauth: &OauthCreds) -> Result<()> {
 
 // macOS Keychain backend uses the `security-framework` crate directly. We
 // intentionally NOT use the more abstract `SecretStore` trait from
-// `keychain::mod` because Claude Code's entry was created with a different
-// service-naming convention (`"Claude Code-credentials"` is the literal
-// service string; there is no `account` qualifier — `security` CLI shows
-// account as empty). Mirroring that exact lookup keeps interop deterministic.
+// `keychain::mod` because Claude Code's entry uses a fixed service name
+// (`"Claude Code-credentials"`) and stores `kSecAttrAccount = $USER` (the
+// macOS login name). Reads go through `ItemSearchOptions` with the account
+// filter omitted (account-agnostic) — confirmed by Story 5.5.2.1 hotfix
+// after the original spike's "account is empty" assumption proved wrong:
+// the `security` CLI is lenient without `-a`, but the Rust crate's
+// `passwords::get_generic_password(svc, "")` is strict and returns
+// `errSecItemNotFound` against an entry whose account is `lorenzorodrigues`.
 
 /// Read and parse the Claude Code Keychain OAuth blob.
 ///
@@ -250,23 +254,20 @@ pub fn write_back(path: &Path, new_oauth: &OauthCreds) -> Result<()> {
 /// "platform unsupported" hint so the caller (typically `read_from_source`)
 /// surfaces a graceful "not configured" rather than crashing.
 ///
+/// **Account-agnostic lookup (Story 5.5.2.1):** the query filters only on
+/// `kSecAttrService` so we match whatever account Claude Code chose — in
+/// practice the macOS login name (`$USER`), but the contract doesn't require
+/// the caller to know that.
+///
 /// Failure modes:
-/// - `errSecItemNotFound` (-25300) → `AppError::Credentials("…not found…")`
+/// - no matching item → `AppError::Credentials("…not found…")`
 /// - other security-framework error → `AppError::Credentials(...)` with the
 ///   underlying message (treats as actionable; user must re-login via Claude
 ///   Code app)
 /// - JSON parse failure → `AppError::Credentials("could not parse…")`
 #[cfg(target_os = "macos")]
 pub fn read_from_keychain(service: &str) -> Result<CredentialsFile> {
-    // Claude Code uses generic-password with NO account qualifier. Pass empty
-    // account to mirror `security find-generic-password -s "..." -w` lookup.
-    let blob = security_framework::passwords::get_generic_password(service, "").map_err(|err| {
-        AppError::Credentials(format!(
-            "Claude Code OAuth credentials not found in Keychain (service: \"{service}\"). \
-             Open the Claude Code app and sign in to populate the Keychain entry. \
-             Underlying error: {err}"
-        ))
-    })?;
+    let blob = read_keychain_blob(service)?;
 
     let blob_str = std::str::from_utf8(&blob).map_err(|e| {
         AppError::Credentials(format!(
@@ -282,6 +283,57 @@ pub fn read_from_keychain(service: &str) -> Result<CredentialsFile> {
     })
 }
 
+/// Internal helper: account-agnostic Keychain query that returns the raw blob.
+/// Story 5.5.2.1 — replaces the previous strict `(service, "")` match that
+/// failed against entries qualified with `kSecAttrAccount = $USER`.
+#[cfg(target_os = "macos")]
+fn read_keychain_blob(service: &str) -> Result<Vec<u8>> {
+    use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
+
+    const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
+
+    let mut opts = ItemSearchOptions::new();
+    opts.class(ItemClass::generic_password())
+        .service(service)
+        .load_data(true);
+
+    let results = opts.search().map_err(|err| {
+        // Map `errSecItemNotFound` to the actionable "not found, please
+        // sign in" message so callers (Settings badge, Refresh button) can
+        // route users to Claude Code instead of showing a generic Keychain
+        // failure. Other OSStatus codes get the generic message so we don't
+        // accidentally hide real auth/ACL issues behind the "re-login" hint.
+        if err.code() == ERR_SEC_ITEM_NOT_FOUND {
+            AppError::Credentials(format!(
+                "Claude Code OAuth credentials not found in Keychain (service: \"{service}\"). \
+                 Open the Claude Code app and sign in to populate the Keychain entry."
+            ))
+        } else {
+            AppError::Credentials(format!(
+                "Claude Code Keychain query failed (service: \"{service}\"): {err}. \
+                 Open the Claude Code app and sign in to populate the Keychain entry."
+            ))
+        }
+    })?;
+
+    results
+        .into_iter()
+        .find_map(|r| match r {
+            SearchResult::Data(d) => Some(d),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            // Empty result set with `Ok(...)` from `search()` — defensive
+            // branch in case security-framework returns `Ok(vec![])` instead
+            // of `errSecItemNotFound` on some macOS versions. Same actionable
+            // message as the `errSecItemNotFound` arm above.
+            AppError::Credentials(format!(
+                "Claude Code OAuth credentials not found in Keychain (service: \"{service}\"). \
+                 Open the Claude Code app and sign in to populate the Keychain entry."
+            ))
+        })
+}
+
 /// Non-macOS stub. Always returns `Credentials` error — the keychain entry
 /// only exists on macOS (per WAVE5-D7 platform scope).
 #[cfg(not(target_os = "macos"))]
@@ -295,21 +347,22 @@ pub fn read_from_keychain(_service: &str) -> Result<CredentialsFile> {
 
 /// Persist refreshed credentials back to the Claude Code Keychain entry.
 ///
-/// Reads the existing blob to preserve unknown top-level fields (e.g.
-/// `trustedDeviceToken`) the same way `write_back` (file) does, then
-/// re-writes the `claudeAiOauth` subtree.
+/// Reads the existing blob (account-agnostic) to preserve unknown top-level
+/// fields (e.g. `trustedDeviceToken`) the same way `write_back` (file) does,
+/// then re-writes the `claudeAiOauth` subtree using `kSecAttrAccount = $USER`
+/// so the existing entry is *updated* (not duplicated). Claude Code itself
+/// uses `$USER` as the account qualifier (Story 5.5.2.1 hotfix).
 ///
 /// macOS-only; non-macOS returns the same `Credentials` error as
 /// `read_from_keychain`.
 #[cfg(target_os = "macos")]
 pub fn write_back_to_keychain(service: &str, new_oauth: &OauthCreds) -> Result<()> {
     // Preserve unknown top-level fields (`trustedDeviceToken`, future
-    // additions) by reading the existing blob and merging.
-    let mut doc: serde_json::Value =
-        match security_framework::passwords::get_generic_password(service, "") {
-            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| serde_json::json!({})),
-            Err(_) => serde_json::json!({}),
-        };
+    // additions) by reading the existing blob account-agnostic and merging.
+    let mut doc: serde_json::Value = match read_keychain_blob(service) {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| serde_json::json!({})),
+        Err(_) => serde_json::json!({}),
+    };
 
     let obj = match doc.as_object_mut() {
         Some(o) => o,
@@ -324,12 +377,22 @@ pub fn write_back_to_keychain(service: &str, new_oauth: &OauthCreds) -> Result<(
     );
 
     let bytes = serde_json::to_vec(&doc).map_err(AppError::Json)?;
-    security_framework::passwords::set_generic_password(service, "", &bytes).map_err(|err| {
-        AppError::Credentials(format!(
-            "Could not write refreshed Anthropic OAuth credentials to Keychain \
-             (service: \"{service}\"): {err}"
-        ))
-    })
+
+    // Mirror Claude Code's account convention so we update the existing entry
+    // rather than creating a duplicate qualified with empty account. If `$USER`
+    // is missing (extremely unusual on macOS), fall back to empty — the write
+    // will still succeed but as a separate entry; the next read will pick up
+    // whichever entry the search hits first.
+    let account = std::env::var("USER").unwrap_or_default();
+
+    security_framework::passwords::set_generic_password(service, &account, &bytes).map_err(
+        |err| {
+            AppError::Credentials(format!(
+                "Could not write refreshed Anthropic OAuth credentials to Keychain \
+                 (service: \"{service}\", account: \"{account}\"): {err}"
+            ))
+        },
+    )
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -652,6 +715,38 @@ mod tests {
         assert_eq!(
             CredsSource::Keychain("anything".into()).tag(),
             "claude_code_keychain"
+        );
+    }
+
+    /// Story 5.5.2.1 — AC-1 regression: `read_from_keychain` MUST be
+    /// account-agnostic. The Claude Code app writes entries with
+    /// `kSecAttrAccount = $USER`; the original 5.5.2 probe passed empty
+    /// account to `get_generic_password` and got `errSecItemNotFound`
+    /// silently — the badge in Settings showed "Não configurado" even
+    /// when Claude Code was logged in on the same machine.
+    ///
+    /// This test is `#[ignore]` because it requires a real Claude Code
+    /// session on the developer machine. Run with `cargo test -p
+    /// torven-core -- --ignored read_from_keychain_finds_account_qualified_entry`
+    /// after `claude` login to validate the hotfix on the dev box.
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires real Claude Code Keychain entry on developer machine"]
+    fn read_from_keychain_finds_account_qualified_entry() {
+        let result = read_from_keychain(CLAUDE_CODE_KEYCHAIN_SERVICE);
+        assert!(
+            result.is_ok(),
+            "expected real Claude Code entry to be found via account-agnostic search; \
+             got: {result:?}. Are you signed into Claude Code on this machine?"
+        );
+        let creds = result.unwrap();
+        assert!(
+            !creds.claude_ai_oauth.access_token.is_empty(),
+            "access_token must be non-empty"
+        );
+        assert!(
+            creds.claude_ai_oauth.expires_at_ms > 0,
+            "expires_at_ms must be positive"
         );
     }
 
