@@ -40,7 +40,11 @@ struct SettingsView: View {
                 vendorDisplayName: "Anthropic",
                 variant: .oauthStatus(
                     status: viewModel.anthropicStatus,
-                    cliName: "Claude CLI"
+                    // Story 5.5.2: Claude Code (Keychain) is preferred over
+                    // legacy Claude CLI standalone. Both are supported via
+                    // the dual-source resolver but messaging defaults to
+                    // Claude Code since that's the modern flow.
+                    cliName: "Claude Code"
                 )
             )
 
@@ -84,14 +88,19 @@ struct SettingsView: View {
         .frame(minWidth: 520, idealWidth: 520, minHeight: 480, idealHeight: 520)
         .animation(.easeInOut(duration: 0.2), value: viewModel.saveState)
         .onAppear {
-            // Synchronous OAuth probe — sub-millisecond on local FS, so
-            // running it on the main thread before the first frame is the
-            // simpler & correct choice (no flash of "Not configured").
-            viewModel.refreshOAuthStatus()
+            // Story 5.5.2 (Wave 5.5): OAuth probe is now async — the
+            // Anthropic path consults the Keychain entry `"Claude
+            // Code-credentials"` via FFI, which can block briefly on first
+            // launch (macOS "allow access" prompt). OpenAI stays on the
+            // synchronous file probe inside the same async block to keep
+            // the call-site uniform.
+            Task { @MainActor in
+                await viewModel.refreshOAuthStatus()
+            }
 
-            // Keychain reads can block briefly on first launch (macOS may
-            // surface a "allow access" prompt). Defer to a Task so the
-            // window draws immediately with empty fields, then populates.
+            // Keychain reads (API-key vendors — OpenRouter, Z.AI) can also
+            // block briefly on first launch. Defer to a Task so the window
+            // draws immediately with empty fields, then populates.
             Task { @MainActor in
                 viewModel.loadKeysFromKeychain()
             }

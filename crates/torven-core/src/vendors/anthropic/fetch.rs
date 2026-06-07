@@ -2,7 +2,6 @@
 //!
 //! Mirrors claudebar:402-491 — the lock + refresh + fetch state machine.
 
-use std::path::Path;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -11,7 +10,7 @@ use crate::cache::{Cache, acquire_lock};
 use crate::error::{AppError, Result};
 use crate::usage::AnthropicSnapshot;
 
-use super::creds::{self, OauthCreds};
+use super::creds::{self, CredsSource, OauthCreds};
 use super::oauth;
 use super::types::UsageResponse;
 
@@ -55,7 +54,7 @@ pub struct FetchOutcome {
 /// failure. All under a flock so multi-monitor Waybar instances coexist.
 pub async fn fetch_snapshot(
     client: &reqwest::Client,
-    creds_path: &Path,
+    creds_source: &CredsSource,
     cache: &Cache,
     endpoints: &Endpoints,
     cache_ttl: Duration,
@@ -65,7 +64,7 @@ pub async fn fetch_snapshot(
 
     // Fast path: cache is fresh, no work needed. We still need creds for the
     // plan label though, so read them either way.
-    let mut creds = creds::read_from(creds_path)?;
+    let mut creds = creds::read_from_source(creds_source)?;
     let plan_label = creds.claude_ai_oauth.plan_label();
 
     if let Some(bytes) = cache.fresh_payload(cache_ttl)? {
@@ -95,8 +94,9 @@ pub async fn fetch_snapshot(
                 creds.claude_ai_oauth.expires_at_ms =
                     Utc::now().timestamp_millis() + (rr.expires_in as i64) * 1000;
                 // Best-effort persist; the refresh worked, so callers should
-                // still see fresh data even if writing the cred file failed.
-                let _ = creds::write_back(creds_path, &creds.claude_ai_oauth);
+                // still see fresh data even if writing back the cred source
+                // failed (Keychain write or file write).
+                let _ = creds::write_back_to_source(creds_source, &creds.claude_ai_oauth);
             }
             Ok(Err(AppError::Http { status, body })) => {
                 auth_ok = false;
@@ -304,7 +304,7 @@ mod tests {
         };
         let outcome = fetch_snapshot(
             &client,
-            creds.path(),
+            &CredsSource::File(creds.path().to_path_buf()),
             &cache,
             &endpoints,
             Duration::from_secs(60),
@@ -337,7 +337,7 @@ mod tests {
         };
         let outcome = fetch_snapshot(
             &client,
-            creds.path(),
+            &CredsSource::File(creds.path().to_path_buf()),
             &cache,
             &endpoints,
             Duration::from_secs(0),
@@ -377,7 +377,7 @@ mod tests {
         };
         let outcome = fetch_snapshot(
             &client,
-            creds.path(),
+            &CredsSource::File(creds.path().to_path_buf()),
             &cache,
             &endpoints,
             Duration::from_secs(0),
@@ -408,7 +408,7 @@ mod tests {
         };
         let err = fetch_snapshot(
             &client,
-            creds.path(),
+            &CredsSource::File(creds.path().to_path_buf()),
             &cache,
             &endpoints,
             Duration::from_secs(0),

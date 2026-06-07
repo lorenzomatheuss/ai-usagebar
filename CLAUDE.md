@@ -100,6 +100,17 @@ worth rotating):
   `printenv VAR | sed 's|.*|<value-set>|'` per variable.
 - **For OAuth credential files** (`~/.claude/.credentials.json`,
   `~/.codex/auth.json`): `jq 'keys'` only.
+- **Never query Keychain entries blindly** for OAuth credentials. Use
+  `security find-generic-password -s "Claude Code-credentials"` to confirm
+  existence (returns metadata only), and `-w` flag (which prints the
+  password blob) **only inside a controlled test fixture**, never in a
+  regular investigation. Like JSON OAuth files, treat the Keychain blob as
+  opaque — pipe through `jq 'keys'` or `jq '.claudeAiOauth | keys'` to
+  inspect structure without exposing token material in the conversation
+  transcript. The legacy "Claude CLI" file path
+  (`~/.claude/.credentials.json`) is read-only fallback for users not on
+  Claude Code; the Keychain entry is the primary source on macOS after
+  Story 5.5.2.
 
 ## Live API smoke discipline
 

@@ -23,7 +23,11 @@ use tempfile::{NamedTempFile, TempDir};
 use torven_core::cache::Cache;
 use torven_core::format::{LabelKind, compute_metrics};
 use torven_core::usage::VendorSnapshot;
-use torven_core::vendors::anthropic::{self, fetch::Endpoints};
+use torven_core::vendors::anthropic::{
+    self,
+    creds::CredsSource,
+    fetch::Endpoints,
+};
 
 fn write_creds() -> NamedTempFile {
     // Token expires far in the future → no refresh needed during the test.
@@ -76,7 +80,7 @@ async fn full_response_parses_into_snapshot_with_three_windows() {
     };
     let outcome = anthropic::fetch_snapshot(
         &client,
-        creds.path(),
+        &CredsSource::File(creds.path().to_path_buf()),
         &cache,
         &endpoints,
         Duration::from_secs(0),
@@ -126,7 +130,7 @@ async fn minimal_response_has_no_sonnet_or_extra() {
     };
     let outcome = anthropic::fetch_snapshot(
         &client,
-        creds.path(),
+        &CredsSource::File(creds.path().to_path_buf()),
         &cache,
         &endpoints,
         Duration::from_secs(0),
@@ -165,7 +169,7 @@ async fn http_429_falls_back_to_stale_cache_with_last_error_recorded() {
     };
     let outcome = anthropic::fetch_snapshot(
         &client,
-        creds.path(),
+        &CredsSource::File(creds.path().to_path_buf()),
         &cache,
         &endpoints,
         Duration::from_secs(0),

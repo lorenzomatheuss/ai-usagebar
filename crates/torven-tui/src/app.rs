@@ -118,14 +118,18 @@ async fn build_outcome(
     match vendor {
         VendorId::Anthropic => {
             let cache = torven_core::cache::Cache::for_vendor("anthropic")?;
-            let creds_path = config
-                .anthropic
-                .credentials_path
-                .clone()
-                .unwrap_or_else(|| anthropic::creds::default_path().unwrap_or_default());
+            // Story 5.5.2: if the user explicitly set `credentials_path` in
+            // config.toml, honor it (legacy file path). Otherwise auto-detect:
+            // Keychain ("Claude Code-credentials") first, then default file
+            // ~/.claude/.credentials.json.
+            let creds_source = if let Some(path) = config.anthropic.credentials_path.clone() {
+                anthropic::creds::CredsSource::File(path)
+            } else {
+                anthropic::creds::default_anthropic_creds_source()
+            };
             let endpoints = anthropic::fetch::Endpoints::default();
             let outcome =
-                anthropic::fetch_snapshot(client, &creds_path, &cache, &endpoints, DEFAULT_TTL)
+                anthropic::fetch_snapshot(client, &creds_source, &cache, &endpoints, DEFAULT_TTL)
                     .await?;
             Ok(outcome.into())
         }
