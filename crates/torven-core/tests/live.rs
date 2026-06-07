@@ -39,6 +39,7 @@ use std::time::Duration;
 
 use torven_core::cache::Cache;
 use torven_core::vendors::{anthropic, openai, openrouter, zai};
+use torven_core::vendors::anthropic::creds::CredsSource;
 
 fn xdg_cache_for(test: &str) -> Cache {
     // Use a per-test scratch dir so smoke tests don't clobber the real cache.
@@ -57,15 +58,21 @@ fn assert_pct(label: &str, p: i32) {
 #[tokio::test]
 #[ignore = "live API; run with --ignored"]
 async fn anthropic_live() {
-    let creds_path = match std::env::var_os("HOME") {
-        Some(home) => PathBuf::from(home).join(".claude/.credentials.json"),
-        None => panic!("HOME not set"),
-    };
-    assert!(
-        creds_path.exists(),
-        "no Claude credentials at {} — log in with `claude` first",
-        creds_path.display()
-    );
+    // Story 5.5.2: prefer Keychain ("Claude Code-credentials") if Claude Code
+    // is logged in; fall back to legacy file otherwise. Either source is fine
+    // for the smoke contract.
+    let creds_source = anthropic::creds::default_anthropic_creds_source();
+    match &creds_source {
+        CredsSource::File(p) => {
+            assert!(
+                p.exists(),
+                "no Claude credentials in Keychain or at {} — log in with \
+                 `claude` or open the Claude Code app first",
+                p.display()
+            );
+        }
+        CredsSource::Keychain(_) => { /* OK, Keychain entry validated by resolver */ }
+    }
     let cache = xdg_cache_for("anthropic");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
@@ -74,7 +81,7 @@ async fn anthropic_live() {
     let endpoints = anthropic::fetch::Endpoints::default();
     let out = anthropic::fetch_snapshot(
         &client,
-        &creds_path,
+        &creds_source,
         &cache,
         &endpoints,
         Duration::from_secs(0),

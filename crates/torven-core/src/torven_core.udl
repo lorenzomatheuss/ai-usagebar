@@ -205,6 +205,33 @@ enum RefreshFfiError {
     "StorageError",
 };
 
+// Story 5.5.2 (Wave 5.5) — Anthropic OAuth status probe.
+//
+// Returned by `ffi_anthropic_oauth_status()`. Captures three orthogonal
+// dimensions so Swift can render the precise badge in Settings:
+//
+//   * `is_connected` — true iff the resolver found a readable credentials
+//     source (Keychain or file). False means "user must run Claude Code login
+//     or `claude` to populate credentials".
+//   * `is_expired`   — true iff `is_connected` AND the access token's
+//     `expiresAt` is in the past. Surfaces as `.expired` in Swift so the
+//     badge prompts "Expired — re-run Claude Code login" instead of
+//     misleadingly showing "Connected".
+//   * `expires_at_secs` — Some when connected, None otherwise. Unix
+//     seconds (NOT ms — Swift Date initializers expect seconds).
+//   * `source`       — Stable string tag for diagnostics:
+//                      "claude_code_keychain" | "claude_cli_file" | "none".
+//
+// The probe never throws — every failure mode degrades to
+// `is_connected=false, source="none"` so Settings can render a graceful "not
+// configured" badge instead of an error banner.
+dictionary OAuthStatusFfi {
+    boolean is_connected;
+    boolean is_expired;
+    i64? expires_at_secs;
+    string source;
+};
+
 // ---------------------------------------------------------------------------
 // Story 4.6 (Wave 4) — Budget burn surface.
 //
@@ -497,6 +524,25 @@ namespace torven_core {
     // `InsightsClient::request_insight_streaming` — Story 1.15).
     [Async, Throws=RefreshFfiError]
     void ffi_refresh_vendor(string vendor_name);
+
+    // Story 5.5.2 (Wave 5.5) — Anthropic OAuth status probe.
+    //
+    // Probes the dual-source resolver (`default_anthropic_creds_source` →
+    // Keychain first, then legacy file) and returns a snapshot of the OAuth
+    // state for the Settings UI. Replaces the legacy file-only probe
+    // (`FileManager.fileExists(atPath: "/.claude/.credentials.json")`) which
+    // returned a false negative for Claude Code users.
+    //
+    // Never throws. Failures surface as `is_connected=false, source="none"`
+    // so the Settings view can render a graceful "Not configured" badge.
+    //
+    // `[Async]` so the Keychain query (which may briefly block on first
+    // launch via the macOS "allow access" prompt) doesn't stall the SwiftUI
+    // main thread. The inner work wraps in `async_compat::Compat` so it
+    // finds a tokio context inside UniFFI's UDL-mode polling driver — same
+    // pattern as `ffi_refresh_vendor`.
+    [Async]
+    OAuthStatusFfi ffi_anthropic_oauth_status();
 
     // Story 4.6 (Wave 4) — Budget burn aggregation.
     //

@@ -1084,6 +1084,73 @@ pub async fn ffi_refresh_vendor(vendor_name: String) -> Result<(), RefreshFfiErr
     ::uniffi::deps::async_compat::Compat::new(refresh_vendor_inner(vendor_name)).await
 }
 
+// ===========================================================================
+// Story 5.5.2 (Wave 5.5) — Anthropic OAuth status FFI surface
+// ===========================================================================
+
+/// Status snapshot returned by `ffi_anthropic_oauth_status()`. See UDL doc for
+/// field semantics.
+#[derive(Debug, Clone)]
+pub struct OAuthStatusFfi {
+    pub is_connected: bool,
+    pub is_expired: bool,
+    pub expires_at_secs: Option<i64>,
+    pub source: String,
+}
+
+/// Probe the dual-source Anthropic OAuth resolver and return a
+/// `OAuthStatusFfi` snapshot for Settings. Async + Compat-wrapped for
+/// symmetry with `ffi_refresh_vendor`.
+pub async fn ffi_anthropic_oauth_status() -> OAuthStatusFfi {
+    ::uniffi::deps::async_compat::Compat::new(anthropic_oauth_status_inner()).await
+}
+
+/// Inner body — pure logic, no async actually needed today (the Keychain
+/// query is synchronous), but kept async to match the UDL surface and leave
+/// room for a future Keychain async API. Tests drive this directly to avoid
+/// the UniFFI polling driver.
+async fn anthropic_oauth_status_inner() -> OAuthStatusFfi {
+    use vendors::anthropic::creds;
+
+    // `default_anthropic_creds_source()` already probes Keychain readability,
+    // so by the time we have a `CredsSource` we know the source EXISTS — but
+    // we still need to actually read it to check the expiry. We re-read here
+    // (cheap on macOS: SecItemCopyMatching is microseconds when cached).
+    let source = creds::default_anthropic_creds_source();
+
+    let creds_file = match creds::read_from_source(&source) {
+        Ok(c) => c,
+        Err(err) => {
+            // Resolver said one source was readable but the read failed (or
+            // the file path doesn't exist). Either way, degrade to
+            // "not configured". Log for diagnostics so we catch the
+            // race-or-corruption case during dev.
+            tracing::debug!(
+                source = source.tag(),
+                "ffi_anthropic_oauth_status: read failed: {}",
+                err
+            );
+            return OAuthStatusFfi {
+                is_connected: false,
+                is_expired: false,
+                expires_at_secs: None,
+                source: "none".to_string(),
+            };
+        }
+    };
+
+    let expires_at_secs = creds_file.claude_ai_oauth.expires_at_secs();
+    let now_secs = chrono::Utc::now().timestamp();
+    let is_expired = expires_at_secs <= now_secs;
+
+    OAuthStatusFfi {
+        is_connected: true,
+        is_expired,
+        expires_at_secs: Some(expires_at_secs),
+        source: source.tag().to_string(),
+    }
+}
+
 /// Inner async body — kept separate from the FFI shim so tests can drive it
 /// directly under `#[tokio::test]` without going through the UniFFI polling
 /// driver.
@@ -1157,23 +1224,40 @@ fn ensure_history_initialized() -> Result<(), RefreshFfiError> {
 const REFRESH_CACHE_TTL: Duration = Duration::from_secs(0);
 
 async fn refresh_anthropic() -> Result<UsageSnapshotInput, RefreshFfiError> {
-    let creds_path = vendors::anthropic::creds::default_path().map_err(RefreshFfiError::from)?;
-    if !creds_path.exists() {
-        // Distinguish "user has not run `claude` to log in" from a generic IO
-        // error — surface as CredentialMissing so Swift can route to Settings.
-        tracing::warn!(
-            "refresh_anthropic: OAuth credentials file not found at {}",
-            creds_path.display()
-        );
-        return Err(RefreshFfiError::CredentialMissing);
+    // Story 5.5.2 (Wave 5.5): try Keychain (`"Claude Code-credentials"`) first,
+    // then fall back to legacy file `~/.claude/.credentials.json`. The resolver
+    // probes Keychain readability synchronously, so by the time we get a source
+    // back we already know read_from_source(&source) will succeed for the
+    // happy-path case (or surface an actionable `Credentials` error otherwise).
+    let creds_source = vendors::anthropic::creds::default_anthropic_creds_source();
+
+    // CredentialMissing: if neither source is readable (Keychain entry missing
+    // AND legacy file missing), short-circuit so Swift can route the user to
+    // Settings / re-auth without burning an HTTP round-trip.
+    match &creds_source {
+        vendors::anthropic::creds::CredsSource::File(p) if !p.exists() => {
+            tracing::warn!(
+                "refresh_anthropic: neither Keychain (\"{}\") nor file ({}) has credentials",
+                vendors::anthropic::creds::CLAUDE_CODE_KEYCHAIN_SERVICE,
+                p.display()
+            );
+            return Err(RefreshFfiError::CredentialMissing);
+        }
+        _ => {}
     }
+
+    tracing::info!(
+        source = creds_source.tag(),
+        "refresh_anthropic: using credentials source"
+    );
+
     let client = reqwest::Client::new();
     let cache = Cache::for_vendor("anthropic").map_err(RefreshFfiError::from)?;
     let endpoints = vendors::anthropic::fetch::Endpoints::default();
 
     let outcome = vendors::anthropic::fetch::fetch_snapshot(
         &client,
-        &creds_path,
+        &creds_source,
         &cache,
         &endpoints,
         REFRESH_CACHE_TTL,

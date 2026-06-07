@@ -49,11 +49,19 @@ enum SaveState: Equatable {
 
 /// OAuth status for vendors managed by external CLIs (Anthropic, OpenAI).
 ///
+/// Story 5.2 introduced `.connected` / `.notConfigured`. Story 5.5.2 (Wave
+/// 5.5) added `.expired` — Anthropic-only today — so the probe can
+/// distinguish a stale token (user has logged in via Claude Code but the
+/// access token expired) from a never-configured state. The View renders
+/// `.expired` as an orange caution badge prompting "Re-run Claude Code login"
+/// instead of misleadingly showing "Connected".
+///
 /// `notConfigured` is rendered as a neutral hint, not an error — the user
 /// hasn't done anything wrong, they just haven't installed the corresponding
 /// CLI yet.
 enum OAuthStatus: Equatable {
     case connected
+    case expired
     case notConfigured
 }
 
@@ -107,12 +115,43 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - OAuth probes
 
-    /// Re-checks both OAuth credential files. Synchronous because
-    /// `FileManager.fileExists` is sub-millisecond on local paths and we want
-    /// the UI to reflect the status before the first frame draws.
-    func refreshOAuthStatus() {
-        anthropicStatus = probe(relativePath: "/.claude/.credentials.json")
+    /// Re-checks both OAuth credentials sources.
+    ///
+    /// Story 5.5.2 (Wave 5.5): Anthropic now uses an async FFI probe
+    /// (`ffiAnthropicOauthStatus()`) that consults the Claude Code Keychain
+    /// entry first and the legacy file path second. The Keychain query is
+    /// macOS-native (microseconds when cached, milliseconds on first launch
+    /// behind a "allow access" prompt), so we run it inside `async` to avoid
+    /// stalling the main thread.
+    ///
+    /// OpenAI stays on the synchronous file probe — Codex CLI writes the
+    /// file directly and there's no Keychain story for it yet (WAVE5.5-D9).
+    func refreshOAuthStatus() async {
+        // OpenAI: synchronous file probe, same as Story 5.2.
         openaiStatus = probe(relativePath: "/.codex/auth.json")
+
+        // Anthropic: async dual-source FFI probe.
+        anthropicStatus = await probeAnthropicOAuth()
+    }
+
+    /// Bridge to the Rust `ffiAnthropicOauthStatus()` async FFI. Maps the
+    /// returned `OAuthStatusFfi` snapshot into the Swift `OAuthStatus` enum.
+    ///
+    /// The UDL declares this surface as `[Async]` (no `[Throws=...]`), so the
+    /// generated signature is `async -> OAuthStatusFfi` (non-throwing). The
+    /// Rust side already maps every failure mode to
+    /// `isConnected=false, source="none"`, so we never need to surface a raw
+    /// error to the user — just project the snapshot into the enum.
+    private func probeAnthropicOAuth() async -> OAuthStatus {
+        let status: OAuthStatusFfi = await ffiAnthropicOauthStatus()
+
+        if !status.isConnected {
+            return .notConfigured
+        }
+        if status.isExpired {
+            return .expired
+        }
+        return .connected
     }
 
     private func probe(relativePath: String) -> OAuthStatus {

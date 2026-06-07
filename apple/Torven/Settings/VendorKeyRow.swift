@@ -142,6 +142,17 @@ struct VendorKeyRow: View {
                     .foregroundColor(.green)
                 Text("Conectado via \(cliName)")
                     .foregroundColor(.primary)
+            case .expired:
+                // Story 5.5.2 (Wave 5.5): the user IS logged in (we found a
+                // credentials source) but the access token's `expiresAt` is
+                // in the past. Prompt them to refresh via the CLI rather
+                // than misleadingly showing "Connected".
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                Text("Token expirado — refaça login no \(cliName)")
+                    .foregroundColor(.orange)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             case .notConfigured:
                 Image(systemName: "info.circle")
                     .foregroundColor(.secondary)
@@ -198,6 +209,16 @@ struct VendorKeyRow: View {
         VendorKeyRow(
             vendorDisplayName: "OpenAI",
             variant: .oauthStatus(status: .notConfigured, cliName: "Codex CLI")
+        )
+    }
+    .frame(width: 480, height: 120)
+}
+
+#Preview("OAuth — expired (Story 5.5.2)") {
+    Form {
+        VendorKeyRow(
+            vendorDisplayName: "Anthropic",
+            variant: .oauthStatus(status: .expired, cliName: "Claude Code")
         )
     }
     .frame(width: 480, height: 120)
