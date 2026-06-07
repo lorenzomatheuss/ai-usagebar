@@ -56,7 +56,60 @@ targets:
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.developer-tools
     scheme:
-      testTargets: []
-      gatherCoverageData: false
+      # Story 5.5.3 (Wave 5.5): wire the new TorvenTests bundle into the
+      # shared `Torven` scheme's Test action. `gatherCoverageData: true`
+      # enables `xcrun xccov view --report` so AC-15 coverage thresholds
+      # (informational, non-blocking) can be measured locally.
+      testTargets:
+        - TorvenTests
+      gatherCoverageData: true
+      coverageTargets:
+        - Torven
       commandLineArguments: {}
       environmentVariables: {}
+  # Story 5.5.3 (Wave 5.5): XCTest unit-test bundle hosted by Torven.app.
+  # - WAVE5.5-D10: bundle id `com.torven.Torven.Tests`, target name
+  #   `TorvenTests`. xcodegen derives the bundle id from `bundleIdPrefix`
+  #   + target name, so the resulting id is `com.torven.TorvenTests` by
+  #   default — override via PRODUCT_BUNDLE_IDENTIFIER to honour the
+  #   cravada `com.torven.Torven.Tests`.
+  # - WAVE5.5-D12: mock strategy = DI; no Mockingbird/Cuckoo. Tests reach
+  #   internal types via `@testable import Torven`, which requires the
+  #   main app to be built with `ENABLE_TESTABILITY = YES` (it is in
+  #   Debug — see Torven target Debug config inherited from xcodegen
+  #   defaults).
+  # - Test host = `$(BUILT_PRODUCTS_DIR)/Torven.app/Contents/MacOS/Torven`
+  #   (in-app testing). xcodegen sets this automatically when `dependencies`
+  #   references the main target with `link: false`.
+  TorvenTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: TorvenTests
+    dependencies:
+      - target: Torven
+    settings:
+      base:
+        # WAVE5.5-D10 cravada: bundle id explicit to honour the cravada
+        # `com.torven.Torven.Tests` (xcodegen default would be
+        # `com.torven.TorvenTests`).
+        PRODUCT_BUNDLE_IDENTIFIER: com.torven.Torven.Tests
+        # Test target deployment target matches the main app (macOS 13+).
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        # @testable import requires Debug configurations to build the app
+        # with testability — Xcode default for Debug.
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Torven.app/Contents/MacOS/Torven"
+        # In-app tests inherit the app's frameworks search path so they
+        # can find TorvenCore.xcframework symbols at test time.
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+          - "@loader_path/../Frameworks"
+        # Resource files (fixture JSONs) live alongside the test sources.
+        # xcodegen builds them into the test bundle's Resources/ folder so
+        # `Bundle(for:).url(forResource:withExtension:)` finds them at
+        # runtime.
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        ALWAYS_SEARCH_USER_PATHS: NO

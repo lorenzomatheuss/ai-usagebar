@@ -1,0 +1,11 @@
+{
+  "_comment": "Story 5.5.3 fixture — month-to-date BudgetStatus when over budget (115% used). Exercises the BudgetBurn 'exceeded' color path.",
+  "totalSpentUsd": 57.50,
+  "totalBudgetUsd": 50.0,
+  "totalPercentUsed": 115.0,
+  "perVendor": [
+    { "vendor": "anthropic", "spentUsd": 22.10, "budgetUsd": 15.0, "percentUsed": 147.33 },
+    { "vendor": "openrouter", "spentUsd": 35.40, "budgetUsd": 35.0, "percentUsed": 101.14 }
+  ],
+  "hasBudget": true
+}

@@ -87,3 +87,29 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
+
+      # Story 5.5.3 (Wave 5.5) — XCTest gate. AC-11/AC-12/AC-13.
+      # `continue-on-error: true` keeps this advisory while we stabilise the
+      # CI signal — promoted to blocking after ≥ 1 week of consistent green
+      # runs (AC-12 escalation criterion).
+      - name: Run XCTest target
+        continue-on-error: true
+        run: |
+          cd apple
+          xcodebuild test \
+            -project Torven.xcodeproj \
+            -scheme Torven \
+            -destination 'platform=macOS,arch=arm64' \
+            -resultBundlePath build/test-results.xcresult \
+            -enableCodeCoverage YES \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      # AC-13: upload the .xcresult bundle on failure so contributors can
+      # download it and inspect failing tests in Xcode locally.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xctest-results
+          path: apple/build/test-results.xcresult

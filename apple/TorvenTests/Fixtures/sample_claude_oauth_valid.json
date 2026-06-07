@@ -1,0 +1,12 @@
+{
+  "_comment": "Story 5.5.3 fixture — Claude Code Keychain blob shape (valid, future expiry). 'expiresAt' is milliseconds-since-epoch ≈ year 2030. Mirrors crates/torven-core/src/anthropic/oauth.rs schema.",
+  "claudeAiOauth": {
+    "accessToken": "sk-ant-test-access-token-fixture-VALID",
+    "refreshToken": "sk-ant-test-refresh-token-fixture-VALID",
+    "expiresAt": 1893456000000,
+    "scopes": [
+      "user:inference",
+      "user:profile"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "_comment": "Story 5.5.3 fixture — month-to-date BudgetStatus when within budget (~25% used). Mirrors BudgetStatus struct in torven_core.swift.",
+  "totalSpentUsd": 12.34,
+  "totalBudgetUsd": 50.0,
+  "totalPercentUsed": 24.68,
+  "perVendor": [
+    { "vendor": "anthropic", "spentUsd": 3.88, "budgetUsd": 15.0, "percentUsed": 25.87 },
+    { "vendor": "openrouter", "spentUsd": 8.46, "budgetUsd": 35.0, "percentUsed": 24.17 }
+  ],
+  "hasBudget": true
+}

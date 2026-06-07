@@ -42,6 +42,51 @@ import SwiftUI
 
 @MainActor
 final class ChartViewModel: ObservableObject {
+    // MARK: - FFI injection seams (Story 5.5.3 — Wave 5.5)
+    //
+    // Three closures wrap the FFI calls so unit tests can stub the side
+    // effects without spinning up SQLite or the network stack. Production
+    // builds pass the real `ffi*` functions as defaults — zero behavior
+    // change vs Wave 5.
+    //
+    // WAVE5.5-D12 cravou: DI manual, no Mockingbird/Cuckoo. Closures match
+    // the underlying FFI signatures so type-changes in `torven_core.swift`
+    // surface as compile errors in this file (and in test stubs).
+
+    /// Wraps `ffiRefreshVendor(vendorName:)`. Called once per vendor in the
+    /// `refresh()` serial loop. Throws `RefreshFfiError` for credential /
+    /// network / API / parse / storage failures (production), or whatever
+    /// the test stub chooses to throw.
+    typealias RefreshFn = @MainActor (_ vendorName: String) async throws -> Void
+
+    /// Wraps `ffiQueryAggregated(...)`. The Story 4.0.5 surface takes 6
+    /// parameters; we keep them all in the closure so the test stub can
+    /// observe (e.g. assert `sinceTs` is the right range) without leaking
+    /// FFI types beyond this seam.
+    typealias QueryFn = @MainActor (
+        _ vendor: String,
+        _ accountFilterMode: HistoryAccountFilterMode,
+        _ accountId: String?,
+        _ sinceTs: Int64,
+        _ untilTs: Int64,
+        _ bucketStrategy: BucketStrategy
+    ) async throws -> [TimeBucket]
+
+    /// Wraps `getBudgetStatus()`. Synchronous FFI surface (no `[Async]`
+    /// in the UDL), so the seam is plain sync — tests pass a closure that
+    /// returns a fixture, production passes the real FFI.
+    typealias BudgetFn = @MainActor () -> BudgetStatus
+
+    /// Wraps `ffiInitHistory(dbPath:)`. Tests stub this to a no-op so the
+    /// lazy init path doesn't trip over a missing SQLite file. Throws
+    /// `HistoryFfiError` in production.
+    typealias InitHistoryFn = @MainActor (_ dbPath: String?) throws -> Void
+
+    private let refreshFn: RefreshFn
+    private let queryFn: QueryFn
+    private let budgetFn: BudgetFn
+    private let initHistoryFn: InitHistoryFn
+
     /// Latest result of `ffi_query_aggregated` for `mainViewModel.dateRange`.
     /// Set to `.empty` on init so the view's empty-state path renders
     /// without an explicit "loading" flash on first appearance.
@@ -145,8 +190,27 @@ final class ChartViewModel: ObservableObject {
         "zai",
     ]
 
-    init(mainViewModel: MainWindowViewModel) {
+    init(
+        mainViewModel: MainWindowViewModel,
+        refreshFn: @escaping RefreshFn = { try await ffiRefreshVendor(vendorName: $0) },
+        queryFn: @escaping QueryFn = { vendor, mode, accountId, sinceTs, untilTs, strategy in
+            try ffiQueryAggregated(
+                vendor: vendor,
+                accountFilterMode: mode,
+                accountId: accountId,
+                sinceTs: sinceTs,
+                untilTs: untilTs,
+                bucketStrategy: strategy
+            )
+        },
+        budgetFn: @escaping BudgetFn = { getBudgetStatus() },
+        initHistoryFn: @escaping InitHistoryFn = { try ffiInitHistory(dbPath: $0) }
+    ) {
         self.mainViewModel = mainViewModel
+        self.refreshFn = refreshFn
+        self.queryFn = queryFn
+        self.budgetFn = budgetFn
+        self.initHistoryFn = initHistoryFn
         bindToDateRange(mainViewModel)
     }
 
@@ -208,10 +272,11 @@ final class ChartViewModel: ObservableObject {
             guard let self else { return }
 
             // Lazy history init. Idempotent on the Rust side, so re-calling
-            // on every retry-after-failure is safe.
+            // on every retry-after-failure is safe. Story 5.5.3: routed
+            // through `initHistoryFn` so tests can no-op this step.
             if !self.historyInitialized {
                 do {
-                    try ffiInitHistory(dbPath: nil)
+                    try self.initHistoryFn(nil)
                     self.historyInitialized = true
                 } catch {
                     self.errorMessage = "Failed to open history database: \(error.localizedDescription)"
@@ -228,13 +293,15 @@ final class ChartViewModel: ObservableObject {
             // the @MainActor isolation is a fine trade-off; Story 4.4+ can
             // move the FFI off-main if profiling shows it matters.
             do {
-                let buckets = try ffiQueryAggregated(
-                    vendor: "",
-                    accountFilterMode: .all,
-                    accountId: nil,
-                    sinceTs: range.sinceTs,
-                    untilTs: range.untilTs,
-                    bucketStrategy: .auto
+                // Story 5.5.3: routed through `queryFn` so tests can return
+                // fixture `TimeBucket` arrays without touching SQLite.
+                let buckets = try await self.queryFn(
+                    "",
+                    .all,
+                    nil,
+                    range.sinceTs,
+                    range.untilTs,
+                    .auto
                 )
 
                 // Guard: if the task was cancelled while the FFI was
@@ -253,7 +320,8 @@ final class ChartViewModel: ObservableObject {
                 // Task keeps the gauge in sync with the rest of the view's
                 // refresh cadence, and the call is cheap (early-returns
                 // when no `[budgets]` is configured).
-                self.budgetStatus = getBudgetStatus()
+                // Story 5.5.3: routed through `budgetFn` for test stubbing.
+                self.budgetStatus = self.budgetFn()
             } catch let error as HistoryFfiError {
                 // Re-running init may help if the slot was lost (shouldn't
                 // happen mid-process but cheap defence against a future
@@ -313,7 +381,9 @@ final class ChartViewModel: ObservableObject {
 
         for vendor in Self.refreshableVendors {
             do {
-                try await ffiRefreshVendor(vendorName: vendor)
+                // Story 5.5.3: routed through `refreshFn` so tests can
+                // observe per-vendor call ordering and inject error paths.
+                try await self.refreshFn(vendor)
             } catch let error as RefreshFfiError {
                 switch error {
                 case .CredentialMissing:
