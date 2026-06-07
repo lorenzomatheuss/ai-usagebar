@@ -1,0 +1,299 @@
+schema: 1
+story: '5.2.1'
+gate: PASS
+status_reason: |
+  Iter 4 FINAL (Pragmática 2 / WAVE5-D8-impl-v4) ships SettingsWindowController
+  mirroring the proven MainWindowController pattern (Story 4.1, in production
+  since Wave 4 with smoke 37/40 PASS). Lorenzo runtime smoke 2026-06-07 returned
+  6/6 ACs PASS including the regression-critical AC-3 (app stays alive after
+  closing Settings) which iter 3 (Pragmática 1) had failed. Build gate green,
+  LSUIElement=true verified directly in the built .app bundle Info.plist
+  (Debug build 2026-06-07 01:33). Story 5.2 originals (SettingsView,
+  SettingsViewModel, VendorKeyRow), MainWindowController and the Rust core are
+  mechanically untouched. Real-API end-to-end was also validated live during
+  the same session (OpenRouter $21.26 month-to-date pulled via
+  /api/v1/credits). 4-iteration trail is documentation of design-discovery,
+  not a quality flag — the surface delivered is small (170 LOC of new Swift,
+  zero behavior change to existing components), pattern-faithful, and
+  empirically validated end-to-end.
+reviewer: 'Quinn'
+updated: '2026-06-07T00:00:00Z'
+score: 9.4
+top_issues: []
+waiver: { active: false }
+
+# ─────────────────────────────────────────────────────────────────────
+# Detailed assessment (advisory — not part of minimal schema)
+# ─────────────────────────────────────────────────────────────────────
+
+assessment:
+  acceptance_criteria:
+    AC-1:
+      verdict: PASS
+      evidence: |
+        Lorenzo runtime smoke 2026-06-07: ⌘, opens Settings with a clean
+        Console — no NSViewBridgeErrorCanceled (Code=18). Root cause:
+        SettingsWindowController.swift:67-72 creates an NSWindow
+        programmatically and wraps SettingsView in NSHostingView at line 74.
+        NSWindow programmatic does not traverse the XPC ViewBridge handshake
+        that the SwiftUI `Settings { }` scene used to trigger, so the
+        .accessory activation policy (LSUIElement: true) no longer cancels
+        anything at open time.
+    AC-2:
+      verdict: PASS
+      evidence: |
+        Lorenzo runtime smoke 2026-06-07: 3 vendors visible at top of
+        Settings panel; OAuth status badges render; SecureFields functional.
+        SettingsView (Story 5.2 original) is byte-identical — only the
+        host changed from SwiftUI scene to NSHostingView wrapper. AC-2 is a
+        regression check on Story 5.2's UI surface and it passed.
+    AC-3:
+      verdict: PASS
+      evidence: |
+        Lorenzo runtime smoke 2026-06-07 (THE regression-critical AC, the
+        one that broke iter 3): close Settings via red button → menu bar
+        icon remains present, ⌘1 opens Main Window, no dock icon appears.
+        Two independent guards now hold the line:
+          (1) SettingsWindowController.swift:110-113 — windowShouldClose
+              returns false + orderOut(nil); the window is never deallocated,
+              so close cannot trigger any "last window closed" termination
+              path.
+          (2) AppDelegate.swift:50-54 — applicationShouldTerminateAfterLast-
+              WindowClosed returns false as defense-in-depth.
+          (3) LSUIElement: true (verified in built bundle) keeps the app as
+              menu-bar accessory at the macOS process-policy layer.
+        The combination of (1) and (3) is sufficient by itself; (2) is
+        documented as non-load-bearing belt-and-suspenders that also serves
+        as the Story 1.15 (Keychain-shutdown) extension point.
+    AC-4:
+      verdict: PASS
+      evidence: |
+        Lorenzo runtime smoke 2026-06-07: OpenRouter key saved, dots visible
+        on field after reopening Settings → key was persisted to Keychain by
+        the unchanged SettingsViewModel (Story 5.2). Real-API call followed
+        in the same session pulled $21.26 month-to-date from OpenRouter
+        /api/v1/credits — strongest possible end-to-end validation: Keychain
+        round-trip → FFI → real vendor API.
+    AC-5:
+      verdict: PASS
+      evidence: |
+        xcodebuild Debug → ** BUILD SUCCEEDED ** (story file T6 checked).
+        Direct verification on built artifact:
+          plutil -extract LSUIElement raw \
+            ~/Library/Developer/Xcode/DerivedData/Torven-.../Build/Products/\
+            Debug/Torven.app/Contents/Info.plist
+          → true
+        Build date stamp: Jun 7 01:33:29 2026. Bundle id com.torven.Torven
+        confirmed. apple/project.yml:43-58 carries the LSUIElement: true
+        declaration with the rationale comment block explaining
+        WAVE5-D8-impl-v4.
+    AC-6:
+      verdict: PASS
+      evidence: |
+        Lorenzo runtime smoke 2026-06-07: closing Settings then ⌘, again
+        reopens cleanly with state preserved. Mechanism:
+        SettingsWindowController.swift:79 sets isReleasedWhenClosed = false
+        and line 111 calls orderOut(nil) on close — the NSWindow instance
+        plus its NSHostingView (and therefore the SettingsViewModel state,
+        feedback flags, etc.) survive intact between opens. Same idempotent-
+        singleton contract MainWindowController has shipped since Wave 4.
+
+  seven_quality_checks:
+    code_review:
+      verdict: PASS
+      notes: |
+        SettingsWindowController is a near-byte-for-byte mirror of the
+        battle-tested MainWindowController:
+          - Same singleton + NSWindowController + NSWindowDelegate composition
+          - Same windowShouldClose → orderOut(nil); return false pattern
+          - Same isReleasedWhenClosed = false + center() bootstrap
+          - Same show() recipe: NSApp.activate(ignoringOtherApps: true) →
+            showWindow(nil) → makeKeyAndOrderFront(nil)
+          - Same coder unavailability + fatalError NSCoder guard
+        Differences are intentional and documented:
+          - styleMask omits .resizable (Settings layout is fixed grid;
+            MainWindow needs resize for chart)
+          - frame 520x480 (Settings) vs 1040x600 (Main)
+          - No setFrameAutosaveName (Settings is invoked on demand;
+            position not user-tunable for now — explicitly noted as
+            Wave 7 extension point)
+        TorvenApp diff is mechanical:
+          - Adds @NSApplicationDelegateAdaptor (defensive, documented as
+            non-load-bearing in iter 4 but extension point for Story 1.15)
+          - Renames defaultShortcutAppliedKey → mainWindowDefaultShortcut-
+            AppliedKey (Swift constant only; UserDefaults string key
+            "TorvenMainWindowDefaultShortcutApplied" is unchanged → zero
+            UserDefaults migration risk)
+          - Adds matching settingsDefaultShortcutAppliedKey for ⌘, default
+          - Removes Settings { SettingsView() } scene
+          - Adds KeyboardShortcuts.onKeyUp(for: .openSettings) → calls
+            SettingsWindowController.shared.show()
+        AppDelegate is 55 LOC, single method, no observers, no closures,
+        no retain-cycle surface. Documentation is decision-grade — every
+        non-trivial choice explained including the 3 abandoned iters.
+
+    unit_tests:
+      verdict: PASS
+      notes: |
+        XCTest target standup remains carry-forward to Wave 5.5+ (TEST-001),
+        consistent with Stories 5.2 and 5.3. This hotfix introduces no new
+        testable Swift logic that wasn't already deferred — SettingsWindow-
+        Controller is structural (NSWindow construction + delegate stubs),
+        the kind of glue that on this platform is verified by runtime smoke
+        (which we have: 6/6 ACs PASS) rather than unit. No existing tests
+        were broken (none touched the affected Swift surface).
+
+    acceptance_criteria_summary:
+      verdict: PASS
+      score: '6/6 ACs verified via Lorenzo runtime smoke 2026-06-07'
+
+    no_regressions:
+      verdict: PASS
+      notes: |
+        Mechanical regression guard: `git diff 5fd837a..4c87fea --` shows
+        Story 5.2 originals (SettingsView.swift, SettingsViewModel.swift,
+        VendorKeyRow.swift), MainWindowController.swift, and the entire
+        Rust core (crates/torven-core/) have ZERO byte-level changes.
+        Behavioral regression guard (Lorenzo smoke): ⌘1 still opens Main
+        Window from Story 4.1; menu bar icon still present; Save/Refresh
+        flows still functional. Cargo.lock churn (bitflags 2.11→2.13,
+        chrono 0.4.44→0.4.45) is auto-refresh from make build-core —
+        patch-level only, no API impact.
+
+    performance:
+      verdict: PASS
+      notes: |
+        Singleton initialization is one-time at first ⌘, press, with
+        identical cost profile to MainWindowController (Wave 4). NSWindow
+        + NSHostingView is the OS-native path; SwiftUI Settings scene was
+        actually a heavier abstraction that internally constructs a
+        ViewBridge XPC connection (which was the bug). Bypassing it is
+        also a slight performance win.
+
+    security:
+      verdict: PASS
+      notes: |
+        Diff scanned for api_key|secret|password|token|credential —
+        no hits in source diff. SettingsWindowController only constructs
+        a window and forwards to the existing SettingsView; no new
+        Keychain access surface, no new entitlements, no new file
+        writes. The Keychain pattern (Rust SecretStore + ffi_keychain_*)
+        from Story 5.2 is untouched. LSUIElement: true preserved =
+        menu-bar accessory = no dock icon leakage = aligned with the
+        "no secrets in tracked files" CLAUDE.md invariant unchanged.
+
+    documentation:
+      verdict: PASS
+      notes: |
+        Story file is exemplary: 6 ACs with empirical smoke evidence
+        per-AC, full history of 3 abandoned iterations with commit
+        references and root-cause analysis, File List with NEW/MODIFIED/
+        NOT-MODIFIED categorization, Decisões cravadas table mapping
+        WAVE5-D8-impl-v1..v4 lineage, Carry-forwards Wave 5.5 lifted
+        verbatim from Story 5.2 + smoke discoveries (sizing, gemini
+        legend, sparse chart, Claude Code Keychain detection).
+        SettingsWindowController.swift, AppDelegate.swift, TorvenApp.swift
+        carry decision-grade inline comments explaining what each
+        iteration tried, why it failed, and why Pragmática 2 closes
+        the loop. project.yml has a 13-line rationale block on the
+        LSUIElement: true line. Future maintainers inheriting this
+        file will not need git archaeology to understand the design.
+
+  constitutional_compliance:
+    article_II_agent_authority:
+      verdict: PASS
+      notes: |
+        Branch local hotfix/wave-5-story-5-2-1-settings-activation,
+        commit 4c87fea, never pushed by @dev. @qa gate executed without
+        invoking any push/PR. @devops will handle push delegation
+        after this PASS.
+
+    article_III_story_driven:
+      verdict: PASS
+      notes: |
+        Story formal with @sm draft + @po 10-point GO 9.7/10 + @dev
+        iter-by-iter Change Log entries (4 iters) + @qa entry below.
+        Status transitioned correctly: Draft → Ready → InProgress →
+        InReview → (this gate will set Done).
+
+    article_IV_no_invention:
+      verdict: PASS
+      notes: |
+        Every design choice traces to an empirical input:
+          - ViewBridge bug = real macOS Console output Lorenzo captured
+          - 3 smoke runs (iter 1/2/3) each documented as commit + outcome
+          - MainWindowController pattern reuse = code that has been in
+            production since Wave 4 (smoke 37/40 PASS, polish #2 merged)
+          - LSUIElement preservation rationale = plutil-verified bundle
+            output, not assumption
+          - Keychain Code-Code detection deferral = real path observation
+            (~/.claude/.credentials.json vs Keychain "Claude Code-credentials")
+        Zero invented features. Even the AppDelegate retention is
+        explicitly framed as defensive + Story 1.15 extension point, not
+        speculative architecture.
+
+    article_V_quality_first:
+      verdict: PASS
+      notes: |
+        Build gate green BEFORE smoke. Smoke runtime BEFORE QA gate.
+        QA gate BEFORE @devops push delegation. The full SDC flow was
+        respected despite 4 iterations — each abandoned iteration was
+        reset (not stacked), keeping the audit trail clean and
+        preventing residual code from drifting into the final state.
+
+  risk_review:
+    delivery_risk:
+      level: LOW
+      notes: |
+        Surface delivered is 170 LOC of new Swift + ~40 LOC TorvenApp
+        delta + 13 LOC project.yml rationale. All verifiable inputs
+        green. No deferred decisions blocking downstream work.
+    production_risk:
+      level: LOW
+      notes: |
+        Pattern is in production (Wave 4 MainWindow shipping since
+        2026-06-05 smoke 37/40). Same controller class hierarchy,
+        same lifecycle hooks, same singleton contract. Failure mode
+        of the new path is "Settings window doesn't appear" — which
+        would have been caught by AC-1 smoke (and was not).
+    process_risk:
+      level: LOW
+      notes: |
+        4-iteration history could be read as instability, but each
+        iter was a documented design-discovery step ending in a clean
+        reset to the previous git anchor. The shipped surface is the
+        smallest of the four (iter 2 was ~190 LOC AppDelegate; iter 4
+        is 55 LOC AppDelegate + 115 LOC controller = pattern-faithful).
+        Pragmática 2 is a dead-end-recovery exit, not over-engineering.
+
+  carry_forward_wave_5_5_plus:
+    - TEST-001 (XCTest target standup) — global Wave 5.5+ — confirmed
+      not blocking here per Stories 5.2 / 5.3 precedent
+    - ISSUE-A (SettingsView dynamic sizing) — iter 4 mitigates by bumping
+      to 520x480 default but doesn't solve dynamic; Wave 5.5
+    - ISSUE-B (gemini in chart legend) — Wave 5.5
+    - ISSUE-C (Chart degenerate with single point) — Wave 5.5
+    - ISSUE-D (Anthropic Claude Code Keychain detection) — Wave 5.5
+    - SettingsView resizable styleMask (when content gains expansion) —
+      Wave 7
+
+  score_breakdown:
+    acceptance_criteria: 10  # 6/6 ACs PASS with direct runtime evidence
+    code_quality: 10         # Pattern-faithful mirror of MainWindowController
+    tests: 7                 # Carry-forward XCTest standup deferred per precedent
+    no_regressions: 10       # Mechanical zero-diff on Story 5.2 originals
+    performance: 10          # Lighter than the SwiftUI Settings scene it replaces
+    security: 10             # No new attack surface, Keychain pattern unchanged
+    documentation: 10        # Decision-grade comments + complete story trail
+    constitutional: 10       # Article II/III/IV/V all PASS
+    process: 9               # 4 iters but each cleanly reset, no residue
+    weighted_total: 9.4      # Average pulled down only by carry-forward tests
+
+decision: |
+  PASS. Story 5.2.1 closes the Settings activation hotfix loop with
+  empirical proof end-to-end. The 4-iteration trail is the textbook
+  case for "let runtime smoke be your falsifier" — every theoretical
+  argument iter 1/2/3 produced was wrong, and iter 4 finally landed
+  on a pattern (MainWindowController mirror) that was already proven
+  in production. Status: InReview → Done. @devops cleared to *push
+  for PR + merge.
