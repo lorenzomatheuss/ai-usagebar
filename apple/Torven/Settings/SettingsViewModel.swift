@@ -105,12 +105,26 @@ final class SettingsViewModel: ObservableObject {
     /// `fileExists` — preview/test builds can point at a fixture root.
     private let homeDirectoryProvider: () -> String
 
+    // MARK: - Anthropic OAuth probe seam (Story 5.5.3 — testing hook)
+
+    /// Indirection over `ffiAnthropicOauthStatus()` so unit tests can inject
+    /// a stub `OAuthStatusFfi` without touching the real Keychain. Defaults
+    /// to the real FFI call in production builds (`SettingsView` never sees
+    /// this seam — the seam exists purely for `SettingsViewModelTests`).
+    ///
+    /// The closure is `async` because the underlying UDL surface is
+    /// declared `[Async]`. Keeping the seam async-shaped keeps the
+    /// production path zero-cost (no extra thread hop, identical signature).
+    private let anthropicOAuthProvider: @Sendable () async -> OAuthStatusFfi
+
     init(
         fileExists: @escaping (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
-        homeDirectoryProvider: @escaping () -> String = { NSHomeDirectory() }
+        homeDirectoryProvider: @escaping () -> String = { NSHomeDirectory() },
+        anthropicOAuthProvider: @escaping @Sendable () async -> OAuthStatusFfi = { await ffiAnthropicOauthStatus() }
     ) {
         self.fileExists = fileExists
         self.homeDirectoryProvider = homeDirectoryProvider
+        self.anthropicOAuthProvider = anthropicOAuthProvider
     }
 
     // MARK: - OAuth probes
@@ -143,7 +157,10 @@ final class SettingsViewModel: ObservableObject {
     /// `isConnected=false, source="none"`, so we never need to surface a raw
     /// error to the user — just project the snapshot into the enum.
     private func probeAnthropicOAuth() async -> OAuthStatus {
-        let status: OAuthStatusFfi = await ffiAnthropicOauthStatus()
+        // Story 5.5.3: route through the injection seam so tests can stub
+        // the snapshot. Production wiring keeps the closure pointing at the
+        // real FFI (default in `init`).
+        let status: OAuthStatusFfi = await anthropicOAuthProvider()
 
         if !status.isConnected {
             return .notConfigured

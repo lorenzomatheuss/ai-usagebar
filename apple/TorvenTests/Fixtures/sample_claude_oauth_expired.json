@@ -1,0 +1,12 @@
+{
+  "_comment": "Story 5.5.3 fixture — Claude Code Keychain blob (expired token). 'expiresAt' is milliseconds-since-epoch in the past (2020). Drives the `.expired` OAuthStatus mapping introduced in Story 5.5.2.",
+  "claudeAiOauth": {
+    "accessToken": "sk-ant-test-access-token-fixture-EXPIRED",
+    "refreshToken": "sk-ant-test-refresh-token-fixture-EXPIRED",
+    "expiresAt": 1577836800000,
+    "scopes": [
+      "user:inference",
+      "user:profile"
+    ]
+  }
+}
