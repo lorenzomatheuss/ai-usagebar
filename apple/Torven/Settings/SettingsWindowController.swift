@@ -57,21 +57,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
     private init() {
-        // 520x480 default: maior que os 360pt iniciais da Story 5.2 pra mitigar
-        // ISSUE-A inadvertidamente (Wave 5.5 trata sizing dinâmico). A janela
-        // não é resizable porque a Settings UI da Story 5.2 tem layout fixo
-        // (SecureField grid + OAuth status badges). Adicionar `.resizable` ao
-        // styleMask seria possível no futuro se Settings ganhar conteúdo
-        // expansível (Wave 7).
+        // Story 5.5.1 (ISSUE-A / WAVE5.5-D2): 520x480 default matches the new
+        // SwiftUI `minHeight: 480, idealHeight: 520` so the Form's 4 vendor
+        // rows (+ future Budget section) render fully on first open. The
+        // window is now `.resizable` so the user can pull the window taller
+        // if their workflow benefits — the SwiftUI `minHeight: 480` floor
+        // prevents collapsing below readability. The `minSize` below
+        // (set after `super.init`) enforces the floor at the AppKit level
+        // too, so the resize handle can't drag below 520x480.
         let initialFrame = NSRect(x: 0, y: 0, width: 520, height: 480)
         let window = NSWindow(
             contentRect: initialFrame,
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Torven Settings"
         window.contentView = NSHostingView(rootView: SettingsView())
+        // AppKit-level floor that mirrors the SwiftUI `minWidth/minHeight`.
+        // Without this the resize handle would still let the user collapse
+        // below the SwiftUI floor, leaving the Form clipped.
+        window.minSize = NSSize(width: 520, height: 480)
         // Preserva instance da window e do hosting view (e portanto o estado
         // do SettingsViewModel) quando o user fecha — `windowShouldClose`
         // abaixo intercepta close pra `orderOut` (esconder) em vez de

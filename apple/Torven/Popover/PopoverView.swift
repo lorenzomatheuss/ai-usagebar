@@ -6,15 +6,20 @@
 //  Story 3.1 (Wave 3): injects @EnvironmentObject coreBridge + single
 //  OpenRouter VendorCard (proof of integration).
 //  Story 3.2 (Wave 3): scales to ForEach(coreBridge.vendors) rendering
-//  all 5 cards in canonical get_vendor_list() order (Anthropic, OpenAI,
-//  OpenRouter, Z.AI, Gemini) and closes UX-Q1 empirically (see ADR §8).
+//  all cards in canonical get_vendor_list() order (Anthropic, OpenAI,
+//  OpenRouter, Z.AI — originally 5 vendors including Gemini; Gemini was
+//  removed in Story 5.5.1 / WAVE5.5-D1) and closes UX-Q1 empirically
+//  (see ADR §8).
 //  Story 4.1 (Wave 4): adds the "Show History…" footer button — first
 //  vector of the dual invocation pattern (WAVE4-D1, cravada). Routes
 //  to MainWindowController.shared.show(); the ⌘1 global hotkey is the
 //  second vector (registered in TorvenApp.swift).
 //
 //  UX-Q1 CLOSED 2026-06-04: 380×540 adopted — 360×420 forced the last
-//  card (Gemini) to be clipped/scrolled. See ADR §8 for the closure note.
+//  card (then Gemini) to be clipped/scrolled. See ADR §8 for the closure
+//  note. Story 5.5.1 dropped Gemini; the 380×540 sizing still applies as
+//  it accommodates the remaining 4-card layout with room for any future
+//  v1.0.1 vendor without re-tuning.
 //
 
 import SwiftUI

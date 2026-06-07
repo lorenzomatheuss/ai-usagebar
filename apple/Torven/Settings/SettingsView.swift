@@ -19,10 +19,14 @@
 //
 //  Sizing
 //  ------
-//  `.frame(width: 520, height: 360)` keeps the window comfortable on macOS
-//  13+ without forcing a resize when the user runs at the default 1.0 text
-//  scale. The dimensions are hardcoded because Settings windows on macOS
-//  conventionally do not resize.
+//  Story 5.5.1 (Wave 5.5 / WAVE5.5-D2): dynamic min/ideal sizing replaces the
+//  legacy `.frame(width: 520, height: 360)` from Story 5.2. The original
+//  hardcoded 360pt height clipped the Z.AI section once we had 4 vendor rows
+//  + Budget section visible. We now declare `minWidth: 520, idealWidth: 520,
+//  minHeight: 480, idealHeight: 520` so SwiftUI sizes the window to fit the
+//  Form content while still preventing the user from collapsing the window
+//  below the readability floor. `SettingsWindowController` (Story 5.2.1
+//  iteration 4) creates the NSWindow at the matching default 520x480.
 //
 
 import SwiftUI
@@ -77,7 +81,7 @@ struct SettingsView: View {
             )
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 360)
+        .frame(minWidth: 520, idealWidth: 520, minHeight: 480, idealHeight: 520)
         .animation(.easeInOut(duration: 0.2), value: viewModel.saveState)
         .onAppear {
             // Synchronous OAuth probe — sub-millisecond on local FS, so

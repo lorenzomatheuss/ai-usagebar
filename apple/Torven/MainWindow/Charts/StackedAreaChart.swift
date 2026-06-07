@@ -22,14 +22,14 @@
 //  the transitions without over-smoothing (it's a true interpolation that
 //  passes through every data point, unlike `.cardinal` which can wander).
 //
-//  ## Vendor colors (5-vendor palette)
+//  ## Vendor colors (4-vendor palette)
 //
-//  Brand-aligned where each vendor has a distinctive marketing color, with
-//  a "gemini" fallback (Google's brand blue — Wave 4 doesn't include Gemini
-//  data, but the slot is reserved so future onboarding doesn't force a
-//  re-color pass). Picked from `KeyValuePairs<String, Color>` rather than
-//  a dictionary so the iteration order is deterministic (Swift Charts uses
-//  this order for both the foreground style scale and the legend).
+//  Brand-aligned where each vendor has a distinctive marketing color. Story
+//  5.5.1 (WAVE5.5-D1) dropped the reserved Gemini slot from this palette —
+//  the empty legend entry was confusing during live smoke. Picked from
+//  `KeyValuePairs<String, Color>` rather than a dictionary so the iteration
+//  order is deterministic (Swift Charts uses this order for both the
+//  foreground style scale and the legend).
 //
 //  ## macOS 13 compatibility
 //
@@ -143,7 +143,12 @@ struct StackedAreaChart: View {
                     y: .value(metric.yAxisLabel, metricValue(sample))
                 )
                 .foregroundStyle(by: .value("Vendor", sample.vendor))
-                .interpolationMethod(.catmullRom)
+                // Story 5.5.1 (WAVE5.5-D3 / ISSUE-C): `.catmullRom` needs
+                // ≥2 points to compute a spline; the helper falls back to
+                // `.linear` for the degenerate single-sample case so the
+                // chart never renders empty when the user has only one
+                // bucket of data (1-day range, brand-new install, etc.).
+                .interpolationMethod(visibleSamples.chartInterpolation)
             }
 
             // Visual cue for the hovered x-position. RuleMark is the
@@ -357,13 +362,14 @@ struct StackedAreaChart: View {
 // MARK: - Preview mock data
 
 private extension ChartData {
-    /// 7 days × 5 vendors × 24 buckets/day = 840 samples — matches the
+    /// 7 days × 4 vendors × 24 buckets/day = 672 samples — matches the
     /// worst-case 7d-hourly bucket count noted in story risks table. T6
-    /// uses this preview to eyeball that 840 AreaMarks render without
+    /// uses this preview to eyeball that the AreaMarks render without
     /// jank; if frame drops appear, we'd add `.chartPlotStyle { $0.compositingGroup() }`
-    /// to the chart body and document it in the Change Log.
+    /// to the chart body and document it in the Change Log. Story 5.5.1
+    /// (WAVE5.5-D1) trimmed the vendor list from 5 → 4 (Gemini removed).
     static var previewMock7Days: ChartData {
-        let vendors = ["openrouter", "anthropic", "openai", "zai", "gemini"]
+        let vendors = ["openrouter", "anthropic", "openai", "zai"]
         let calendar = Calendar.current
         let now = Date()
         let dayStart = calendar.startOfDay(for: now)
